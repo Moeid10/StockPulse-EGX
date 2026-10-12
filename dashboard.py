@@ -1,3 +1,4 @@
+from egx_assets import EGX_ASSETS
 import streamlit as st
 import json
 import os
