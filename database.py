@@ -2,34 +2,40 @@ import sqlite3
 import hashlib
 from datetime import datetime
 
-DB_FILE = "stockpulse.db"
+DB_NAME = "stockpulse.db"
 
 def get_db():
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
 
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
 def init_db():
     conn = get_db()
-    cursor = conn.cursor()
+    c = conn.cursor()
+    
     # جدول المستخدمين
-    cursor.execute("""
+    c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
-            created_at TEXT
+            created_at TEXT NOT NULL
         )
     """)
-    # جدول محافظ المستخدمين
-    cursor.execute("""
+    
+    # جدول المحافظ
+    c.execute("""
         CREATE TABLE IF NOT EXISTS portfolios (
             username TEXT PRIMARY KEY,
             cash REAL NOT NULL DEFAULT 100000.0,
-            FOREIGN KEY (username) REFERENCES users(username)
+            FOREIGN KEY(username) REFERENCES users(username)
         )
     """)
-    # جدول المراكز المفتوحة (الأسهم المملوكة)
-    cursor.execute("""
+    
+    # جدول الأسهم المملوكة (Holdings)
+    c.execute("""
         CREATE TABLE IF NOT EXISTS holdings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
@@ -37,166 +43,209 @@ def init_db():
             shares INTEGER NOT NULL,
             avg_price REAL NOT NULL,
             UNIQUE(username, symbol),
-            FOREIGN KEY (username) REFERENCES users(username)
+            FOREIGN KEY(username) REFERENCES users(username)
         )
     """)
+    
     # جدول سجل الصفقات
-    cursor.execute("""
+    c.execute("""
         CREATE TABLE IF NOT EXISTS trades (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
-            date TEXT NOT NULL,
             symbol TEXT NOT NULL,
-            trade_type TEXT NOT NULL,
-            shares INTEGER NOT NULL,
+            type TEXT NOT NULL,
             price REAL NOT NULL,
+            shares INTEGER NOT NULL,
             total_value REAL NOT NULL,
             reason TEXT,
-            FOREIGN KEY (username) REFERENCES users(username)
+            date TEXT NOT NULL,
+            FOREIGN KEY(username) REFERENCES users(username)
         )
     """)
+    
     conn.commit()
-
-    # إنشاء مستخدم أدمن افتراضي لو غير موجود
-    default_admin = "admin"
-    default_pass = hashlib.sha256("123456".encode("utf-8")).hexdigest()
-    cursor.execute("SELECT username FROM users WHERE username = ?", (default_admin,))
-    if not cursor.fetchone():
-        cursor.execute("INSERT INTO users VALUES (?, ?, ?)", (default_admin, default_pass, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        cursor.execute("INSERT INTO portfolios VALUES (?, ?)", (default_admin, 100000.0))
-        conn.commit()
     conn.close()
 
-init_db()
-
-def verify_user(username, password):
-    h = hashlib.sha256(password.encode("utf-8")).hexdigest()
+def register_user(username: str, password: str):
+    init_db()
+    username = username.strip()
+    if not username or not password:
+        return False, "اسم المستخدم وكلمة المرور مطلوبان."
+    
     conn = get_db()
     c = conn.cursor()
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        pwd_hash = hash_password(password)
+        c.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)", 
+                  (username, pwd_hash, now))
+        c.execute("INSERT INTO portfolios (username, cash) VALUES (?, 100000.0)", (username,))
+        conn.commit()
+        return True, "تم إنشاء الحساب بنجاح ورصيدك 100,000 ج جاهز!"
+    except sqlite3.IntegrityError:
+        return False, "اسم المستخدم مسجل مسبقاً، يرجى اختيار اسم آخر."
+    finally:
+        conn.close()
+
+def verify_user(username: str, password: str) -> bool:
+    init_db()
+    username = username.strip()
+    conn = get_db()
+    c = conn.cursor()
+    pwd_hash = hash_password(password)
     c.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
-    return row and row["password_hash"] == h
+    if row and row["password_hash"] == pwd_hash:
+        return True
+    return False
 
-def register_user(username, password):
+def get_user_portfolio(username: str):
+    init_db()
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT username FROM users WHERE username = ?", (username,))
-    if c.fetchone():
-        conn.close()
-        return False, "اسم المستخدم مسجل بالفعل."
     
-    h = hashlib.sha256(password.encode("utf-8")).hexdigest()
-    c.execute("INSERT INTO users VALUES (?, ?, ?)", (username, h, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    c.execute("INSERT INTO portfolios VALUES (?, ?)", (username, 100000.0))
-    conn.commit()
-    conn.close()
-    return True, "تم إنشاء الحساب بنجاح!"
-
-def get_user_portfolio(username):
-    conn = get_db()
-    c = conn.cursor()
     c.execute("SELECT cash FROM portfolios WHERE username = ?", (username,))
     p_row = c.fetchone()
-    cash = p_row["cash"] if p_row else 100000.0
-
-    c.execute("SELECT symbol, shares, avg_price FROM holdings WHERE username = ?", (username,))
-    holdings_rows = c.fetchall()
-    holdings = {row["symbol"]: {"shares": row["shares"], "avg_price": row["avg_price"]} for row in holdings_rows}
-
-    c.execute("SELECT date, symbol, trade_type as type, shares, price, total_value, reason FROM trades WHERE username = ? ORDER BY id DESC", (username,))
-    trades = [dict(row) for row in c.fetchall()]
+    cash = float(p_row["cash"]) if p_row else 100000.0
+    
+    c.execute("SELECT symbol, shares, avg_price FROM holdings WHERE username = ? AND shares > 0", (username,))
+    h_rows = c.fetchall()
+    holdings = {r["symbol"]: {"shares": int(r["shares"]), "avg_price": float(r["avg_price"])} for r in h_rows}
+    
+    c.execute("SELECT symbol, type, price, shares, total_value, reason, date FROM trades WHERE username = ? ORDER BY id DESC", (username,))
+    t_rows = c.fetchall()
+    trades = [dict(t) for t in t_rows]
+    
     conn.close()
+    return {
+        "cash": cash,
+        "holdings": holdings,
+        "trade_history": trades
+    }
 
-    return {"cash": cash, "holdings": holdings, "trade_history": trades}
-
-def execute_user_trade(username, symbol, trade_type, price, shares=None, reason="تنفيذ آلي"):
+def execute_user_trade(username: str, symbol: str, trade_type: str, price: float, shares: int, reason: str = ""):
+    init_db()
+    if shares <= 0 or price <= 0:
+        return False, "الكمية والسعر يجب أن يكونا أكبر من الصفر."
+    
+    total_cost = round(price * shares, 2)
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT cash FROM portfolios WHERE username = ?", (username,))
-    cash = c.fetchone()["cash"]
-
-    c.execute("SELECT shares, avg_price FROM holdings WHERE username = ? AND symbol = ?", (username, symbol))
-    h_row = c.fetchone()
-    owned_shares = h_row["shares"] if h_row else 0
-    owned_avg = h_row["avg_price"] if h_row else 0.0
-
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    if trade_type.upper() == "BUY":
-        if not shares or shares <= 0:
-            conn.close()
-            return False, "الكمية المطلوبة غير صحيحة."
-        total_cost = shares * price
-        if cash < total_cost:
-            conn.close()
-            return False, f"السيولة غير كافية. المطلوب: {total_cost:,.2f} ج | المتاح: {cash:,.2f} ج"
-
-        new_cash = cash - total_cost
-        new_shares = owned_shares + shares
-        new_avg = ((owned_shares * owned_avg) + total_cost) / new_shares
-
-        c.execute("UPDATE portfolios SET cash = ? WHERE username = ?", (new_cash, username))
-        c.execute("""
-            INSERT INTO holdings (username, symbol, shares, avg_price) VALUES (?, ?, ?, ?)
-            ON CONFLICT(username, symbol) DO UPDATE SET shares = ?, avg_price = ?
-        """, (username, symbol, new_shares, new_avg, new_shares, new_avg))
+    
+    try:
+        c.execute("SELECT cash FROM portfolios WHERE username = ?", (username,))
+        p_row = c.fetchone()
+        current_cash = float(p_row["cash"]) if p_row else 100000.0
         
-        c.execute("INSERT INTO trades (username, date, symbol, trade_type, shares, price, total_value, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                  (username, now_str, symbol, "BUY", shares, price, total_cost, reason))
-        conn.commit()
-        conn.close()
-        return True, f"تم شراء {shares} سهم من {symbol} بسعر {price:.2f} ج"
-
-    elif trade_type.upper() == "SELL":
-        sell_shares = shares if (shares and shares > 0) else owned_shares
-        if owned_shares <= 0 or sell_shares > owned_shares:
-            conn.close()
-            return False, f"لا توجد كمية كافية للبيع. تملك: {owned_shares}"
-
-        total_gain = sell_shares * price
-        new_cash = cash + total_gain
-        remaining_shares = owned_shares - sell_shares
-
-        c.execute("UPDATE portfolios SET cash = ? WHERE username = ?", (new_cash, username))
-        if remaining_shares > 0:
-            c.execute("UPDATE holdings SET shares = ? WHERE username = ? AND symbol = ?", (remaining_shares, username, symbol))
+        c.execute("SELECT shares, avg_price FROM holdings WHERE username = ? AND symbol = ?", (username, symbol))
+        h_row = c.fetchone()
+        curr_shares = int(h_row["shares"]) if h_row else 0
+        curr_avg = float(h_row["avg_price"]) if h_row else 0.0
+        
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        if trade_type.upper() == "BUY":
+            if current_cash < total_cost:
+                return False, f"السيولة النقدية غير كافية ({current_cash:,.2f} ج)."
+            
+            new_cash = current_cash - total_cost
+            new_shares = curr_shares + shares
+            new_avg = round(((curr_shares * curr_avg) + total_cost) / new_shares, 2)
+            
+            c.execute("UPDATE portfolios SET cash = ? WHERE username = ?", (new_cash, username))
+            c.execute("""
+                INSERT INTO holdings (username, symbol, shares, avg_price) 
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(username, symbol) DO UPDATE SET shares = ?, avg_price = ?
+            """, (username, symbol, new_shares, new_avg, new_shares, new_avg))
+            
+            c.execute("""
+                INSERT INTO trades (username, symbol, type, price, shares, total_value, reason, date)
+                VALUES (?, ?, 'BUY', ?, ?, ?, ?, ?)
+            """, (username, symbol, price, shares, total_cost, reason, now))
+            
+            conn.commit()
+            return True, f"تم شراء {shares} سهم من {symbol} بنجاح."
+            
+        elif trade_type.upper() == "SELL":
+            if curr_shares < shares:
+                return False, f"لا تملك كمية كافية للبيع (المتاح: {curr_shares} سهم)."
+            
+            new_cash = current_cash + total_cost
+            new_shares = curr_shares - shares
+            
+            c.execute("UPDATE portfolios SET cash = ? WHERE username = ?", (new_cash, username))
+            if new_shares == 0:
+                c.execute("DELETE FROM holdings WHERE username = ? AND symbol = ?", (username, symbol))
+            else:
+                c.execute("UPDATE holdings SET shares = ? WHERE username = ? AND symbol = ?", (new_shares, username, symbol))
+                
+            c.execute("""
+                INSERT INTO trades (username, symbol, type, price, shares, total_value, reason, date)
+                VALUES (?, ?, 'SELL', ?, ?, ?, ?, ?)
+            """, (username, symbol, price, shares, total_cost, reason, now))
+            
+            conn.commit()
+            return True, f"تم بيع {shares} سهم من {symbol} بنجاح."
+            
         else:
-            c.execute("DELETE FROM holdings WHERE username = ? AND symbol = ?", (username, symbol))
-
-        c.execute("INSERT INTO trades (username, date, symbol, trade_type, shares, price, total_value, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                  (username, now_str, symbol, "SELL", sell_shares, price, total_gain, reason))
-        conn.commit()
+            return False, "نوع العملية غير صالح."
+            
+    except Exception as e:
+        conn.rollback()
+        return False, f"خطأ في قاعدة البيانات: {str(e)}"
+    finally:
         conn.close()
-        return True, f"تم بيع {sell_shares} سهم من {symbol} بسعر {price:.2f} ج"
 
-    conn.close()
-    return False, "نوع العملية غير معروف."
-
-def panic_liquidate_user(username, market_prices):
+def panic_liquidate_user(username: str, market_prices: dict):
+    init_db()
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT symbol, shares FROM holdings WHERE username = ?", (username,))
-    holdings = c.fetchall()
-    if not holdings:
+    try:
+        c.execute("SELECT symbol, shares FROM holdings WHERE username = ? AND shares > 0", (username,))
+        holdings = c.fetchall()
+        if not holdings:
+            return False, "المحفظة خالية بالفعل من أي أسهم."
+        
+        recovered_cash = 0.0
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        for h in holdings:
+            sym = h["symbol"]
+            qty = int(h["shares"])
+            cur_price = market_prices.get(sym, 10.0)
+            val = round(cur_price * qty, 2)
+            recovered_cash += val
+            
+            c.execute("""
+                INSERT INTO trades (username, symbol, type, price, shares, total_value, reason, date)
+                VALUES (?, ?, 'SELL', ?, ?, ?, '🚨 تسييل طارئ كامل (Panic Liquidation)', ?)
+            """, (username, sym, cur_price, qty, val, now))
+            
+        c.execute("DELETE FROM holdings WHERE username = ?", (username,))
+        c.execute("UPDATE portfolios SET cash = cash + ? WHERE username = ?", (recovered_cash, username))
+        conn.commit()
+        return True, f"تم تسييل جميع المراكز واسترجاع {recovered_cash:,.2f} ج كاش بنجاح!"
+    except Exception as e:
+        conn.rollback()
+        return False, f"خطأ أثناء التسييل: {str(e)}"
+    finally:
         conn.close()
-        return False, "المحفظة لا تحتوي على أي مراكز لتسييلها."
 
-    for h in holdings:
-        sym = h["symbol"]
-        shares = h["shares"]
-        price = market_prices.get(sym, 10.0)
-        execute_user_trade(username, sym, "SELL", price, shares=shares, reason="🚨 تسييل طوارئ شامل للمحفظة")
-    conn.close()
-return True, "تم تسييل كافة المراكز وتحويلها إلى سيولة نقدية."
 def get_all_users_summary():
+    init_db()
     conn = get_db()
     c = conn.cursor()
     c.execute("""
-        SELECT u.username, u.created_at, p.cash 
+        SELECT u.username, u.created_at, IFNULL(p.cash, 100000.0) as cash 
         FROM users u 
         LEFT JOIN portfolios p ON u.username = p.username
+        ORDER BY u.created_at DESC
     """)
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return rows
+
+# تفعيل الجداول فور استدعاء الملف
+init_db()
