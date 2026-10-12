@@ -3,90 +3,119 @@ import os
 from datetime import datetime
 
 PORTFOLIO_FILE = "portfolio.json"
-INITIAL_CASH = 100000.0  # رأس المال المبدئي: 100 ألف جنيه
-MAX_ALLOCATION_PER_TRADE = 0.20  # حد أقصى 20% من السيولة في العملية الواحدة
 
-def init_portfolio():
+def init_portfolio(initial_cash=100000.0):
     if not os.path.exists(PORTFOLIO_FILE):
         data = {
-            "cash": INITIAL_CASH,
-            "holdings": {},  # {ticker: {"shares": n, "avg_price": x, "buy_date": "..."}}
+            "cash": initial_cash,
+            "holdings": {},
             "trade_history": []
         }
         with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-
-def execute_trade(symbol, action, price, reason="AI Decision"):
-    init_portfolio()
+            json.dump(data, f, indent=4)
+        return data
     with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
-        port = json.load(f)
+        return json.load(f)
 
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def load_portfolio():
+    return init_portfolio()
+
+def save_portfolio(data):
+    with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+def execute_trade(symbol, action, price, shares=None, reason="Manual Execution"):
+    port = load_portfolio()
+    cash = float(port.get("cash", 0.0))
+    holdings = port.get("holdings", {})
+    history = port.get("trade_history", [])
+
+    time_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if action == "BUY":
-        # تخصيص 20% من الكاش المتاح للشراء
-        allocated_cash = port["cash"] * MAX_ALLOCATION_PER_TRADE
-        if allocated_cash < 1000 or port["cash"] < price:
-            return False, "السيولة غير كافية لإتمام الصفقة"
+        # في الشراء إذا لم تحدد الكمية يدخل بـ 15% من الكاش أو 15,000 ج كحد أقصى
+        if shares is None:
+            allocated = min(cash * 0.20, 20000.0)
+            if allocated < price:
+                return False, "السيولة النقدية غير كافية لفتح المركز."
+            shares = int(allocated // price)
 
-        shares_to_buy = int(allocated_cash // price)
-        if shares_to_buy <= 0:
-            return False, "سعر السهم أعلى من الحصة المخصصة"
+        if shares <= 0:
+            return False, "الكمية يجب أن تكون أكبر من صفر."
 
-        total_cost = shares_to_buy * price
-        port["cash"] -= total_cost
+        total_cost = shares * price
+        if total_cost > cash:
+            return False, "الرصيد المتاح لا يكفي لتغطية إجمالي الصفقة."
 
-        if symbol in port["holdings"]:
-            curr = port["holdings"][symbol]
-            new_shares = curr["shares"] + shares_to_buy
-            new_avg = ((curr["shares"] * curr["avg_price"]) + total_cost) / new_shares
-            port["holdings"][symbol]["shares"] = new_shares
-            port["holdings"][symbol]["avg_price"] = round(new_avg, 2)
-        else:
-            port["holdings"][symbol] = {
-                "shares": shares_to_buy,
-                "avg_price": round(price, 2),
-                "buy_date": now_str
-            }
+        cash -= total_cost
+        curr_shares = holdings.get(symbol, {}).get("shares", 0) if isinstance(holdings.get(symbol), dict) else holdings.get(symbol, 0)
+        curr_avg = holdings.get(symbol, {}).get("avg_price", price) if isinstance(holdings.get(symbol), dict) else price
+        
+        new_shares = curr_shares + shares
+        new_avg = ((curr_shares * curr_avg) + total_cost) / new_shares if new_shares > 0 else price
 
-        trade_record = {
-            "date": now_str,
+        holdings[symbol] = {
+            "shares": new_shares,
+            "avg_price": round(new_avg, 2)
+        }
+
+        history.append({
+            "date": time_now,
             "symbol": symbol,
             "type": "BUY",
-            "shares": shares_to_buy,
+            "shares": shares,
             "price": round(price, 2),
             "total_value": round(total_cost, 2),
             "reason": reason
-        }
-        port["trade_history"].append(trade_record)
+        })
 
     elif action == "SELL":
-        if symbol not in port["holdings"] or port["holdings"][symbol]["shares"] <= 0:
-            return False, "لا توجد أسهم مملوكة لبيعها"
+        if symbol not in holdings:
+            return False, f"لا تملك أي أسهم في {symbol} لبيعها."
 
-        shares_to_sell = port["holdings"][symbol]["shares"]
-        avg_price = port["holdings"][symbol]["avg_price"]
-        total_income = shares_to_sell * price
-        pnl = total_income - (shares_to_sell * avg_price)
-        pnl_pct = (pnl / (shares_to_sell * avg_price)) * 100
+        curr_shares = holdings[symbol].get("shares", 0) if isinstance(holdings[symbol], dict) else holdings[symbol]
+        
+        if shares is None or shares > curr_shares:
+            shares = curr_shares
 
-        port["cash"] += total_income
-        del port["holdings"][symbol]
+        if shares <= 0:
+            return False, "لا توجد أسهم متاحة للبيع."
 
-        trade_record = {
-            "date": now_str,
+        total_gain = shares * price
+        cash += total_gain
+
+        remaining = curr_shares - shares
+        if remaining > 0:
+            avg_p = holdings[symbol].get("avg_price", price) if isinstance(holdings[symbol], dict) else price
+            holdings[symbol] = {"shares": remaining, "avg_price": avg_p}
+        else:
+            del holdings[symbol]
+
+        history.append({
+            "date": time_now,
             "symbol": symbol,
             "type": "SELL",
-            "shares": shares_to_sell,
+            "shares": shares,
             "price": round(price, 2),
-            "total_value": round(total_income, 2),
-            "profit_loss": round(pnl, 2),
-            "profit_pct": f"{pnl_pct:.2f}%",
+            "total_value": round(total_gain, 2),
             "reason": reason
-        }
-        port["trade_history"].append(trade_record)
+        })
 
-    with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
-        json.dump(port, f, indent=4, ensure_ascii=False)
+    port["cash"] = round(cash, 2)
+    port["holdings"] = holdings
+    port["trade_history"] = history
+    save_portfolio(port)
+    return True, f"تم تنفيذ عملية {action} بنجاح ({shares} سهم)."
 
-    return True, f"تم تنفيذ عملية {action} بنجاح"
+def panic_liquidate(market_prices_dict):
+    """تسييل كافة الأسهم المملوكة فوراً بناءً على آخر أسعار مسجلة"""
+    port = load_portfolio()
+    holdings = list(port.get("holdings", {}).keys())
+    if not holdings:
+        return False, "المحفظة لا تحتوي على أي مراكز مفتوحة لتسييلها."
+
+    for sym in holdings:
+        price = market_prices_dict.get(sym, 1.0)
+        execute_trade(sym, "SELL", price, reason="PANIC SELL: تسييل اضطراري شامل")
+        
+    return True, "تم تسييل كافة المراكز المفتوحة وتحويل المحفظة إلى كاش بالكامل."
