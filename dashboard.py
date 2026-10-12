@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# منع المتصفح من ترجمة النصوص وتشويه التنسيق
+# ضبط الاتجاه العربي ومنع الترجمة التلقائية
 st.markdown("""
     <meta name="google" content="notranslate">
     <style>
@@ -27,20 +27,6 @@ st.markdown("""
     .notranslate {
         translate: no !important;
     }
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 10px;
-    }
-    th, td {
-        border: 1px solid #e0e0e0;
-        padding: 10px;
-        text-align: center !important;
-    }
-    th {
-        background-color: #f8f9fa;
-        color: #333;
-    }
     [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {
         direction: ltr !important;
         text-align: right !important;
@@ -48,7 +34,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ----------------- نظام إدارة المستخدمين -----------------
+# ----------------- نظام المستخدمين -----------------
 USERS_FILE = "users.json"
 PORTFOLIO_FILE = "portfolio.json"
 
@@ -72,7 +58,7 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
 
-# شاشة تسجيل الدخول وإنشاء الحساب
+# شاشة تسجيل الدخول
 if not st.session_state["authenticated"]:
     col_c1, col_c2, col_c3 = st.columns([1, 2, 1])
     with col_c2:
@@ -193,7 +179,7 @@ total_pnl_pct = (total_pnl / initial_capital) * 100
 
 st.divider()
 
-# كروت المؤشرات المالية
+# كروت المؤشرات
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("القيمة الإجمالية للمحفظة", f"{total_portfolio_value:,.2f} ج")
 m2.metric("السيولة النقدية المتاحة", f"{cash:,.2f} ج")
@@ -226,7 +212,7 @@ with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade Ov
             else:
                 st.error(message)
 
-# الرسوم البيانية التفاعلية
+# الرسوم البيانية
 st.subheader("📈 التحليلات البصرية وتوزيع الأصول")
 c_chart1, c_chart2 = st.columns([1, 1])
 
@@ -297,7 +283,5 @@ with col_right:
             
         df_trades = pd.DataFrame(table_data)
         st.dataframe(df_trades, use_container_width=True, hide_index=True)
-    else:
-        st.info("لم يتم تسجيل صفقات بعد.")rkdown(html_trades, unsafe_allow_html=True)
     else:
         st.info("لم يتم تسجيل صفقات بعد.")
