@@ -7,63 +7,148 @@ from egx_assets import EGX_ASSETS
 from database import verify_user, register_user, get_user_portfolio, execute_user_trade, panic_liquidate_user
 
 st.set_page_config(
-    page_title="StockPulse EGX | البورصة المصرية",
-    page_icon="📈",
-    layout="wide"
+    page_title="StockPulse | Thndr Edition",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-# تنسيق مريح ونظيف للعين وبدون كسر لأيقونات النظام
+# ثيم وتصميم مستوحى من Thndr & Telda (Dark Emerald Minimalist)
 st.markdown("""
 <meta name="google" content="notranslate">
 <style>
-    .notranslate { translate: no !important; }
-    
-    /* ضبط اتجاه النصوص والقراءة العربية */
-    h1, h2, h3, h4, p, label {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    /* تحسين مظهر الكروت التفاعلية */
-    div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        padding: 16px 20px;
-        border-radius: 12px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    div[data-testid="stMetricLabel"] {
-        font-size: 0.85rem !important;
-        color: #64748b !important;
-        direction: rtl;
-        text-align: right;
-    }
-    div[data-testid="stMetricValue"] {
-        font-size: 1.4rem !important;
-        font-weight: 700 !important;
-        color: #0f172a !important;
+    /* ألوان وخلفية ثاندر وتيلدا الهادئة */
+    .stApp {
+        background-color: #0c0d12 !important;
+        color: #f1f5f9 !important;
     }
 
-    /* تحسين الجداول لتكون واضحة بدون قص */
+    /* كروت ناعمة ومريحة للعين */
+    .thndr-card {
+        background: #141721;
+        border: 1px solid #1f2433;
+        border-radius: 18px;
+        padding: 22px 24px;
+        margin-bottom: 20px;
+        direction: rtl;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    .thndr-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .thndr-title {
+        font-size: 1.55rem;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: -0.5px;
+        margin: 0;
+    }
+
+    .thndr-tag {
+        background: rgba(0, 230, 118, 0.12);
+        color: #00E676;
+        border: 1px solid rgba(0, 230, 118, 0.25);
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    /* كروت المؤشرات المالية (Thndr Metric Cards) */
+    .metrics-wrapper {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 12px;
+        margin-bottom: 24px;
+        direction: rtl;
+    }
+
+    .m-card {
+        background: #141721;
+        border: 1px solid #1e2330;
+        border-radius: 16px;
+        padding: 16px 18px;
+        transition: border-color 0.2s ease;
+    }
+    .m-card:hover {
+        border-color: #00E676;
+    }
+
+    .m-label {
+        color: #8b949e;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+
+    .m-value {
+        font-size: 1.45rem;
+        font-weight: 800;
+        color: #ffffff;
+        direction: ltr;
+        text-align: right;
+    }
+
+    .m-sub-up {
+        color: #00E676;
+        font-size: 0.82rem;
+        font-weight: 700;
+        margin-top: 4px;
+    }
+    .m-sub-down {
+        color: #ff5252;
+        font-size: 0.82rem;
+        font-weight: 700;
+        margin-top: 4px;
+    }
+
+    /* تنسيق الجداول لتشبه تطبيقات التداول الحديثة */
     .stTable table {
-        width: 100% !important;
-        border-collapse: collapse !important;
-        border-radius: 10px !important;
+        background: #141721 !important;
+        border-radius: 14px !important;
+        border: 1px solid #1e2330 !important;
         overflow: hidden !important;
-        border: 1px solid #e2e8f0 !important;
+        direction: rtl !important;
+        width: 100% !important;
     }
     .stTable th {
-        background-color: #f8fafc !important;
-        color: #475569 !important;
-        font-weight: 600 !important;
-        padding: 12px !important;
+        background: #181d2a !important;
+        color: #8b949e !important;
+        font-weight: 700 !important;
+        padding: 12px 14px !important;
+        border-bottom: 1px solid #23293a !important;
         text-align: right !important;
     }
     .stTable td {
-        padding: 12px !important;
-        color: #1e293b !important;
-        border-bottom: 1px solid #f1f5f9 !important;
+        color: #f1f5f9 !important;
+        padding: 14px !important;
+        border-bottom: 1px solid #1a1f2c !important;
         text-align: right !important;
+    }
+
+    /* تحسين الأزرار وحقول الإدخال */
+    div[data-testid="stExpander"] {
+        background: #141721 !important;
+        border: 1px solid #1e2330 !important;
+        border-radius: 16px !important;
+    }
+
+    button[kind="primary"] {
+        background: #00E676 !important;
+        color: #0c0d12 !important;
+        font-weight: 800 !important;
+        border-radius: 12px !important;
+        border: none !important;
+    }
+    button[kind="primary"]:hover {
+        background: #00c853 !important;
+        color: #000000 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -72,19 +157,24 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
 
-# شاشة تسجيل الدخول
+# ----------------- تسجيل الدخول -----------------
 if not st.session_state["authenticated"]:
-    _, col_login, _ = st.columns([1, 2, 1])
-    with col_login:
-        st.markdown("<h2 style='text-align: center;'>📈 StockPulse EGX</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #64748b;'>منصة التداول الآلي وإدارة المحافظ للبورصة المصرية</p>", unsafe_allow_html=True)
+    _, col_auth, _ = st.columns([1, 2, 1])
+    with col_auth:
+        st.markdown("""
+            <div style="text-align: center; margin: 40px 0 25px 0; direction: rtl;">
+                <h1 style="color: #00E676; font-size: 2.1rem; font-weight: 800; margin: 0;">⚡ StockPulse</h1>
+                <p style="color: #8b949e; font-size: 0.95rem; margin-top: 6px;">محفظتك الاستثمارية الذكية للبورصة المصرية</p>
+            </div>
+        """, unsafe_allow_html=True)
         
-        tab_login, tab_register = st.tabs(["تسجيل الدخول", "إنشاء حساب جديد"])
+        tab_log, tab_reg = st.tabs(["تسجيل الدخول", "فتح حساب جديد"])
         
-        with tab_login:
-            u_name = st.text_input("اسم المستخدم", key="login_user")
-            u_pass = st.text_input("كلمة المرور", type="password", key="login_pass")
-            if st.button("دخول", use_container_width=True, type="primary"):
+        with tab_log:
+            st.write("")
+            u_name = st.text_input("اسم المستخدم", key="log_user")
+            u_pass = st.text_input("كلمة المرور", type="password", key="log_pass")
+            if st.button("دخول إلى المحفظة", use_container_width=True, type="primary"):
                 if verify_user(u_name, u_pass):
                     st.session_state["authenticated"] = True
                     st.session_state["username"] = u_name
@@ -92,19 +182,20 @@ if not st.session_state["authenticated"]:
                 else:
                     st.error("اسم المستخدم أو كلمة المرور غير صحيحة.")
 
-        with tab_register:
-            reg_user = st.text_input("اسم مستخدم جديد", key="reg_user")
-            reg_pass = st.text_input("كلمة المرور", type="password", key="reg_pass")
-            reg_pass_conf = st.text_input("تأكيد كلمة المرور", type="password", key="reg_conf")
-            if st.button("إنشاء حساب", use_container_width=True):
+        with tab_reg:
+            st.write("")
+            reg_user = st.text_input("اسم مستخدم جديد", key="r_user")
+            reg_pass = st.text_input("كلمة المرور", type="password", key="r_pass")
+            reg_conf = st.text_input("تأكيد كلمة المرور", type="password", key="r_conf")
+            if st.button("تفعيل المحفظة بـ 100,000 ج", use_container_width=True):
                 if not reg_user or not reg_pass:
                     st.warning("يرجى ملء جميع الحقول.")
-                elif reg_pass != reg_pass_conf:
-                    st.error("كلمتا المرور غير متطابقتين.")
+                elif reg_pass != reg_conf:
+                    st.error("كلمات المرور غير متطابقة.")
                 else:
                     ok, msg = register_user(reg_user, reg_pass)
                     if ok:
-                        st.success(msg)
+                        st.success("تم تفعيل حسابك بنجاح! تفضل بتسجيل الدخول.")
                     else:
                         st.error(msg)
     st.stop()
@@ -120,8 +211,8 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.subheader("⚠️ مركز الطوارئ")
-    if st.button("🚨 تسييل المحفظة بالكامل (Panic Sell)", type="primary", use_container_width=True):
+    st.markdown("<p style='color: #ff5252; font-weight: 700; font-size: 0.85rem;'>⚠️ إدارة المخاطر القصوى</p>", unsafe_allow_html=True)
+    if st.button("🚨 تسييل المحفظة (Panic Sell)", type="primary", use_container_width=True):
         u_port = get_user_portfolio(current_user)
         market_prices = {}
         for sym in u_port["holdings"].keys():
@@ -134,16 +225,7 @@ with st.sidebar:
         else:
             st.warning(msg)
 
-# ترويسة الصفحة
-col_h1, col_h2 = st.columns([3, 1])
-with col_h1:
-    st.title("📊 لوحة إدارة الاستثمار والتداول الآلي")
-    st.caption("تحليل فني ذكي (DeepSeek + Llama) • إدارة مخاطر آلية")
-with col_h2:
-    st.success("🟢 محرك التداول متصل")
-    st.caption(f"توقيت التحديث: {datetime.now().strftime('%H:%M:%S')}")
-
-# جلب بيانات المحفظة
+# جلب بيانات المحفظة بعد التأكد التام
 port = get_user_portfolio(current_user)
 cash = float(port.get("cash", 100000.0))
 holdings = port.get("holdings", {})
@@ -151,7 +233,7 @@ trade_history = port.get("trade_history", [])
 
 holdings_rows = []
 invested_val = 0.0
-allocation_labels = ["السيولة النقدية (Cash)"]
+allocation_labels = ["كاش غير مستثمر"]
 allocation_values = [cash]
 
 for sym, info in holdings.items():
@@ -174,54 +256,96 @@ initial_capital = 100000.0
 total_pnl = total_portfolio_value - initial_capital
 total_pnl_pct = (total_pnl / initial_capital) * 100
 
-st.divider()
+pnl_class = "m-sub-up" if total_pnl >= 0 else "m-sub-down"
+pnl_sign = "+" if total_pnl >= 0 else ""
 
-# كروت المؤشرات الأساسية (متجاوبة مع الموبايل والكمبيوتر)
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("إجمالي قيمة المحفظة", f"{total_portfolio_value:,.2f} ج")
-m2.metric("السيولة المتاحة", f"{cash:,.2f} ج")
-m3.metric("رأس المال في الأسهم", f"{invested_val:,.2f} ج")
-m4.metric("صافي العائد (P&L)", f"{total_pnl:,.2f} ج", delta=f"{total_pnl_pct:.2f}%")
+# 1. الترويسة الأنيقة
+now_str = datetime.now().strftime("%I:%M %p")
+st.markdown(f"""
+    <div class="thndr-card">
+        <div class="thndr-header">
+            <div>
+                <h2 class="thndr-title">⚡ StockPulse • محفظة {current_user}</h2>
+                <div style="color: #8b949e; font-size: 0.85rem; margin-top: 4px;">تداول آلي كمي مدعوم بالذكاء الاصطناعي</div>
+            </div>
+            <div class="thndr-tag">● السوق نشط • {now_str}</div>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
 
-st.divider()
+# 2. كروت المؤشرات بستايل Thndr المريح
+st.markdown(f"""
+    <div class="metrics-wrapper">
+        <div class="m-card">
+            <div class="m-label">إجمالي قيمة الحساب</div>
+            <div class="m-value">{total_portfolio_value:,.2f} <span style="font-size: 0.85rem; color:#8b949e;">ج</span></div>
+        </div>
+        <div class="m-card">
+            <div class="m-label">السيولة المتاحة (كاش)</div>
+            <div class="m-value">{cash:,.2f} <span style="font-size: 0.85rem; color:#8b949e;">ج</span></div>
+        </div>
+        <div class="m-card">
+            <div class="m-label">المستثمر في الأسهم</div>
+            <div class="m-value">{invested_val:,.2f} <span style="font-size: 0.85rem; color:#8b949e;">ج</span></div>
+        </div>
+        <div class="m-card">
+            <div class="m-label">إجمالي الأرباح / الخسائر</div>
+            <div class="m-value">{pnl_sign}{total_pnl:,.2f} <span style="font-size: 0.85rem; color:#8b949e;">ج</span></div>
+            <div class="{pnl_class}">{pnl_sign}{total_pnl_pct:.2f}% منذ البداية</div>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
 
-# التداول اليدوي
+# 3. التداول اليدوي الفوري المضمون
 with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade)", expanded=False):
-    t1, t2, t3, t4 = st.columns([2, 1, 1, 1])
+    t1, t2, t3, t4 = st.columns([2, 1, 1, 1.2])
     with t1:
         asset_names = list(EGX_ASSETS.keys())
-        selected_label = st.selectbox("الأصل المالي", asset_names)
+        selected_label = st.selectbox("اختر السهم / الأصل", asset_names)
         trade_ticker = EGX_ASSETS[selected_label]
     with t2:
-        trade_type = st.selectbox("نوع الأمر", ["BUY", "SELL"])
+        trade_type = st.selectbox("نوع العملية", ["BUY", "SELL"])
     with t3:
-        trade_shares = st.number_input("عدد الأسهم", min_value=1, value=100, step=10)
+        trade_shares = st.number_input("الكمية", min_value=1, value=100, step=10)
     with t4:
         st.write("")
         st.write("")
-        if st.button("تنفيذ الصفقة", use_container_width=True, type="primary"):
+        if st.button("🚀 تأكيد العملية", use_container_width=True, type="primary"):
             metrics = get_stock_metrics(trade_ticker)
             exec_price = metrics.get("current_price", 10.0)
-            suc, message = execute_user_trade(current_user, trade_ticker, trade_type, exec_price, int(trade_shares), reason="أمر يدوي من لوحة التحكم")
+            suc, message = execute_user_trade(
+                current_user,
+                trade_ticker,
+                trade_type,
+                exec_price,
+                int(trade_shares),
+                reason="تنفيذ يدوي مباشر من لوحة التحكم"
+            )
             if suc:
                 st.success(message)
                 st.rerun()
             else:
                 st.error(message)
 
-# الرسوم البيانية بألوان نظيفة ومريحة
+# 4. الرسوم البيانية بألوان Thndr
 c1, c2 = st.columns(2)
 
 with c1:
     fig_donut = px.pie(
         names=allocation_labels,
         values=allocation_values,
-        hole=0.45,
-        title="توزيع السيولة والأسهم",
-        color_discrete_sequence=px.colors.qualitative.Safe
+        hole=0.6,
+        title="توزيع الأصول والمراكز",
+        color_discrete_sequence=['#00E676', '#1E88E5', '#FFB300', '#D81B60', '#8E24AA']
     )
-    fig_donut.update_traces(textposition='inside', textinfo='percent+label')
-    fig_donut.update_layout(margin=dict(t=40, b=10, l=10, r=10), showlegend=False)
+    fig_donut.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#0c0d12', width=2)))
+    fig_donut.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#8b949e'),
+        margin=dict(t=40, b=10, l=10, r=10),
+        showlegend=False
+    )
     st.plotly_chart(fig_donut, use_container_width=True)
 
 with c2:
@@ -232,18 +356,25 @@ with c2:
             x="symbol",
             y="total_value",
             color="type",
-            color_discrete_map={"BUY": "#10b981", "SELL": "#ef4444"},
-            title="أحجام الصفقات الأخيرة",
+            color_discrete_map={"BUY": "#00E676", "SELL": "#ff5252"},
+            title="أحدث الصفقات المنفذة",
             labels={"symbol": "السهم", "total_value": "القيمة (ج)", "type": "العملية"}
         )
-        fig_bar.update_layout(margin=dict(t=40, b=10, l=10, r=10))
+        fig_bar.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#8b949e'),
+            margin=dict(t=40, b=10, l=10, r=10),
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)')
+        )
         st.plotly_chart(fig_bar, use_container_width=True)
     else:
-        st.info("لا توجد صفقات منفذة بعد.")
+        st.info("لا توجد صفقات لعرض المسار البياني.")
 
 st.divider()
 
-# جداول البيانات
+# 5. الجداول بتنسيق واضح
 st.subheader("📌 الأسهم المملوكة حالياً")
 if holdings_rows:
     st.table(pd.DataFrame(holdings_rows))
@@ -264,13 +395,13 @@ if trade_history:
         action_tag = "🟢 شراء" if t.get("type") == "BUY" else "🔴 بيع"
         
         table_data.append({
-            "التوقيت": time_str,
+            "الوقت": time_str,
             "السهم": t.get("symbol", ""),
-            "النوع": action_tag,
+            "العملية": action_tag,
             "الكمية": f"{s_val:,}",
             "السعر": f"{p_val:.2f} ج",
             "الإجمالي": f"{tot:,.2f} ج",
-            "مبرر القرار": t.get("reason", "تنفيذ استراتيجي آلي")
+            "مبرر الذكاء الاصطناعي": t.get("reason", "تنفيذ استراتيجي آلي")
         })
     st.table(pd.DataFrame(table_data))
 else:
