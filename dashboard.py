@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# منع المتصفح من تشويه النصوص وضبط التنسيق
+# منع المتصفح من ترجمة النصوص وتشويه التنسيق
 st.markdown("""
     <meta name="google" content="notranslate">
     <style>
@@ -48,6 +48,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ----------------- نظام إدارة المستخدمين -----------------
 USERS_FILE = "users.json"
 PORTFOLIO_FILE = "portfolio.json"
 
@@ -71,7 +72,7 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
 
-# شاشة تسجيل الدخول
+# شاشة تسجيل الدخول وإنشاء الحساب
 if not st.session_state["authenticated"]:
     col_c1, col_c2, col_c3 = st.columns([1, 2, 1])
     with col_c2:
@@ -120,7 +121,6 @@ with st.sidebar:
     st.divider()
     st.subheader("⚠️ مركز الطوارئ")
     if st.button("🚨 تسييل المحفظة بالكامل (Panic Sell)", type="primary", use_container_width=True):
-        # تجميع آخر أسعار مسجلة للمحفظة للتسييل الفوري
         current_port = json.load(open(PORTFOLIO_FILE, "r", encoding="utf-8")) if os.path.exists(PORTFOLIO_FILE) else {}
         market_prices = {}
         for sym in current_port.get("holdings", {}).keys():
@@ -140,7 +140,7 @@ def load_portfolio():
     with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# ترويسة اللوحة
+# ترويسة المنصة
 col_t1, col_t2 = st.columns([3, 1])
 with col_t1:
     st.title("📊 منصة إدارة الاستثمار الآلي للبورصة المصرية")
@@ -193,7 +193,7 @@ total_pnl_pct = (total_pnl / initial_capital) * 100
 
 st.divider()
 
-# كروت المؤشرات
+# كروت المؤشرات المالية
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("القيمة الإجمالية للمحفظة", f"{total_portfolio_value:,.2f} ج")
 m2.metric("السيولة النقدية المتاحة", f"{cash:,.2f} ج")
@@ -202,7 +202,7 @@ m4.metric("العائد الإجمالي (P&L)", f"{total_pnl:,.2f} ج", delta=f
 
 st.divider()
 
-# قسم التداول اليدوي الفوري (يحتوي على كافة أسهم وصناديق مصر)
+# قسم التداول اليدوي الفوري
 with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade Override)", expanded=False):
     t_c1, t_c2, t_c3, t_c4 = st.columns(4)
     with t_c1:
@@ -226,7 +226,7 @@ with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade Ov
             else:
                 st.error(message)
 
-# الرسوم البيانية
+# الرسوم البيانية التفاعلية
 st.subheader("📈 التحليلات البصرية وتوزيع الأصول")
 c_chart1, c_chart2 = st.columns([1, 1])
 
@@ -262,7 +262,8 @@ with c_chart2:
 
 st.divider()
 
-col_left, col_right = st.columns([1, 1])
+# جداول المراكز وتفسيرات الصفقات
+col_left, col_right = st.columns([1, 1.3])
 
 with col_left:
     st.subheader("📌 الأسهم المملوكة حالياً")
@@ -276,17 +277,41 @@ with col_left:
         st.info("لا توجد أسهم مملوكة حالياً.")
 
 with col_right:
-    st.subheader("📜 آخر صفقات نفذها المدير المالي")
+    st.subheader("📜 آخر صفقات ومبررات الذكاء الاصطناعي")
     if trade_history:
         recent = list(reversed(trade_history[-6:]))
-        html_trades = "<div class='notranslate'><table><tr><th>التوقيت</th><th>السهم</th><th>العملية</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr>"
+        html_trades = """
+        <div class='notranslate'>
+            <table>
+                <tr>
+                    <th>التوقيت</th>
+                    <th>السهم</th>
+                    <th>العملية</th>
+                    <th>الكمية</th>
+                    <th>السعر</th>
+                    <th>الإجمالي</th>
+                    <th>مبرر القرار (AI Reasoning)</th>
+                </tr>
+        """
         for t in recent:
             time_str = t.get("date", "").split()[-1] if " " in t.get("date", "") else t.get("date", "")
             p_val = float(t.get("price", 0.0))
             s_val = int(t.get("shares", 0))
             tot = float(t.get("total_value", p_val * s_val))
+            reason = t.get("reason", "تنفيذ آلي")
             badge_color = "#27ae60" if t.get('type') == 'BUY' else "#c0392b"
-            html_trades += f"<tr><td>{time_str}</td><td><b>{t.get('symbol')}</b></td><td style='color:{badge_color}; font-weight:bold;'>{t.get('type')}</td><td>{s_val}</td><td>{p_val:.2f} ج</td><td>{tot:,.2f} ج</td></tr>"
+            
+            html_trades += f"""
+                <tr>
+                    <td>{time_str}</td>
+                    <td><b>{t.get('symbol')}</b></td>
+                    <td style='color:{badge_color}; font-weight:bold;'>{t.get('type')}</td>
+                    <td>{s_val}</td>
+                    <td>{p_val:.2f} ج</td>
+                    <td>{tot:,.2f} ج</td>
+                    <td style='text-align: right; font-size: 0.85em; color: #555;'>{reason}</td>
+                </tr>
+            """
         html_trades += "</table></div>"
         st.markdown(html_trades, unsafe_allow_html=True)
     else:
