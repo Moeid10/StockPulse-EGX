@@ -302,18 +302,4 @@ st.markdown(f"""
         </div>
         <div class="m-card">
             <div class="m-label">المستثمر في الأسهم</div>
-            <div class="m-value">{invested_val:,.2f} <span style="font-size: 0.85rem; color:#8b949e;">ج</span></div>
-        </div>
-        <div class="m-card">
-            <div class="m-label">إجمالي الأرباح / الخسائر</div>
-            <div class="m-value">{pnl_sign}{total_pnl:,.2f} <span style="font-size: 0.85rem; color:#8b949e;">ج</span></div>
-            <div class="{pnl_class}">{pnl_sign}{total_pnl_pct:.2f}% منذ البداية</div>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
-
-# 3. تنفيذ صفقة يدوية فورية
-with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade)", expanded=False):
-    t1, t2, t3, t4 = st.columns([2, 1, 1, 1.2])
-    with t1:
-        asset_names = list(EGX
+            <div class
