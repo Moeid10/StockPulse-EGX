@@ -1,167 +1,98 @@
 import time
-import json
-import re
-from datetime import datetime
 from market_data import get_stock_metrics
-from portfolio_manager import execute_trade, PORTFOLIO_FILE, init_portfolio
-from groq import Groq
-
-# إعداد مفتاح Groq
-GROQ_API_KEY = "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"
-client = Groq(api_key=GROQ_API_KEY)
-
-# قائمة الأسهم المراقبة
-WATCHLIST = {
-    "Madinet Masr": "MASR.CA",
-    "CIB": "COMI.CA",
-    "Talaat Moustafa": "TMGH.CA",
-    "Ibnsina Pharma": "ISPH.CA",
-    "MOPCO": "MFPC.CA",
-    "Abu Qir": "ABUK.CA"
-}
-
-def get_portfolio():
-    init_portfolio()
-    with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def clean_reasoning_output(text):
-    # إزالة وسوم التفكير الخاصة بـ DeepSeek إذا وجدت
-    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-    return cleaned
-
-def query_model(model_name, prompt):
-    try:
-        completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model=model_name,
-            temperature=0.1,
-        )
-        res = completion.choices[0].message.content.strip()
-        res = clean_reasoning_output(res)
-        
-        first_word = res.split()[0].upper().replace(",", "").replace(".", "").replace("*", "")
-        action = "HOLD"
-        if "BUY" in first_word:
-            action = "BUY"
-        elif "SELL" in first_word:
-            action = "SELL"
-        return action, res
-    except Exception as e:
-        return "HOLD", f"Model Error ({model_name}): {e}"
-
-def consult_ai(name, ticker, metrics):
-    prompt = f"""
-    You are an elite quantitative hedge fund analyst evaluating EGX stock: {name} ({ticker}).
-    Technical Indicators:
-    - Current Price: {metrics['current_price']} EGP
-    - RSI (14): {metrics['rsi']}
-    - SMA 20: {metrics['sma_20']}
-    - Trend: {metrics['trend']}
-
-    Instruction:
-    Your output MUST start with exactly one word: BUY, SELL, or HOLD.
-    Followed by exactly ONE brief, factual sentence justifying the decision based on RSI and trend.
-    """
-
-    # استشارة أقوى نموذجين على المنصة
-    action_deepseek, reason_deepseek = query_model("deepseek-r1-distill-llama-70b", prompt)
-    action_llama, reason_llama = query_model("llama-3.3-70b-versatile", prompt)
-
-    print(f"   ├─ [DeepSeek-R1-70B]: {action_deepseek} | {reason_deepseek}")
-    print(f"   └─ [Llama-3.3-70B]  : {action_llama} | {reason_llama}")
-
-    # قاعدة اتخاذ القرار: إجماع كامل للدخول، وتحذير فردي للخروج
-    if action_deepseek == "BUY" and action_llama == "BUY":
-        final_action = "BUY"
-        final_reason = f"Dual AI Consensus BUY: {reason_deepseek}"
-    elif action_deepseek == "SELL" or action_llama == "SELL":
-        final_action = "SELL"
-        final_reason = f"Dual AI Risk SELL: {reason_deepseek if action_deepseek == 'SELL' else reason_llama}"
-    else:
-        final_action = "HOLD"
-        final_reason = f"Consensus not reached (DeepSeek: {action_deepseek}, Llama: {action_llama})"
-
-    return final_action, final_reason
+from financial_agent import analyze_market
+from portfolio_manager import execute_trade, load_portfolio
+from egx_assets import EGX_ASSETS
 
 def run_trading_cycle():
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"\n==========================================")
-    print(f"[*] Dual-AI Trading Engine Running: {now_str}")
-    print(f"==========================================")
-    
-    portfolio = get_portfolio()
-    cash = float(portfolio.get("cash", 0))
+    print("\n" + "="*50)
+    print("🚀 بدء دورة فحص السوق ومسح أسهم وصناديق البورصة المصرية...")
+    print("="*50)
+
+    portfolio = load_portfolio()
+    cash = portfolio.get("cash", 0.0)
     holdings = portfolio.get("holdings", {})
 
-    print(f"[PORTFOLIO] Cash: {cash:,.2f} EGP | Active Positions: {len(holdings)}")
+    print(f"💰 السيولة النقدية المتاحة: {cash:,.2f} ج | المراكز المفتوحة: {len(holdings)}")
 
-    # 1. مراقبة المراكز المفتوحة وشروط الأمان
-    for ticker in list(holdings.keys()):
-        metrics = get_stock_metrics(ticker)
-        if "error" in metrics:
-            continue
-            
-        current_price = metrics["current_price"]
-        pos_data = holdings[ticker]
-        entry_price = pos_data.get("avg_price", current_price) if isinstance(pos_data, dict) else current_price
-
-        pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0.0
-        print(f"\n[MONITORING] {ticker} | Entry: {entry_price} | Current: {current_price} | PnL: {pnl_pct:.2f}%")
-
-        if pnl_pct <= -3.0:
-            print(f"[!] TRIGGER: Stop-Loss reached (-3%) for {ticker}")
-            execute_trade(ticker, "SELL", current_price, reason="Stop-Loss Triggered (-3%)")
-        elif pnl_pct >= 6.0:
-            print(f"[+] TRIGGER: Take-Profit reached (+6%) for {ticker}")
-            execute_trade(ticker, "SELL", current_price, reason="Take-Profit Triggered (+6%)")
-        else:
-            action, reason = consult_ai(ticker, ticker, metrics)
-            print(f"Final Decision: {action}")
-            if action == "SELL":
-                print(f"[!] TRIGGER: AI Consensus Exit for {ticker}")
-                execute_trade(ticker, "SELL", current_price, reason=reason)
-
-    # 2. فحص واقتناص فرص جديدة
-    if cash > 10000:
-        for name, ticker in WATCHLIST.items():
-            if ticker in holdings:
-                continue
-
+    # 1. مسح السوق وتجميع الإشارات الفنية الأولية
+    candidates = []
+    
+    for name, ticker in EGX_ASSETS.items():
+        try:
             metrics = get_stock_metrics(ticker)
             if "error" in metrics:
                 continue
 
-            print(f"\n[SCANNING] {name} ({ticker}) | Price: {metrics['current_price']} EGP")
-            action, reason = consult_ai(name, ticker, metrics)
-            print(f"Final Decision: {action}")
+            rsi = metrics.get("rsi", 50.0)
+            trend = metrics.get("trend", "NEUTRAL")
+            price = metrics.get("current_price", 0.0)
 
-            if action == "BUY":
-                print(f"[+] EXECUTING ENTRY: {ticker}")
-                execute_trade(symbol=ticker, action="BUY", price=metrics["current_price"], reason=reason)
-                portfolio = get_portfolio()
-                cash = float(portfolio.get("cash", 0))
-                if cash < 10000:
-                    print("[!] Minimum cash reserve reached.")
-                    break
-    else:
-        print("[i] Capital fully deployed or below threshold.")
+            # ترشيح الأسهم في مناطق شراء محتملة (تشبع بيعي أو اتجاه صاعد)
+            # أو الأسهم المملوكة حالياً لفحص إمكانية جني الأرباح / وقف الخسارة
+            is_owned = ticker in holdings
+            is_oversold = rsi < 42
+            is_overbought = rsi > 68
+            
+            if is_owned or is_oversold or (trend == "BULLISH" and rsi < 55):
+                candidates.append({
+                    "name": name,
+                    "ticker": ticker,
+                    "metrics": metrics,
+                    "is_owned": is_owned
+                })
+        except Exception as e:
+            print(f"تخطي {ticker} بسبب خطأ في البيانات: {e}")
+            continue
 
-    print(f"\n[*] Cycle complete. Next scan in 60s...")
+    print(f"🔍 تم ترشيح {len(candidates)} أصل/سهم لإخضاعها لتحليل الذكاء الاصطناعي المزدوج.")
 
-if __name__ == "__main__":
-    print(">>> StockPulse Dual-AI Engine (DeepSeek-R1-70B + Llama-3.3-70B) is Online...")
-    print(">>> Press Ctrl + C to stop at any time.")
-    
-    CHECK_INTERVAL_SECONDS = 60 
+    # 2. فحص المرشحين عبر DeepSeek-R1 و Llama-3.3-70B
+    for item in candidates[:6]:  # فحص أبرز 6 فرص في كل دورة لتفادي الـ Rate Limits
+        ticker = item["ticker"]
+        name = item["name"]
+        metrics = item["metrics"]
+        price = metrics["current_price"]
 
+        print(f"\n🧠 جاري استشارة الذكاء الاصطناعي لسهم: {name} ({ticker}) - السعر: {price:.2f} ج...")
+
+        try:
+            decision_data = analyze_market(ticker, metrics, holdings)
+            decision = decision_data.get("decision", "HOLD")
+            reason = decision_data.get("reason", "لا توجد أسباب كافية للتنفيذ")
+
+            print(f"📋 القرار النهائي: [{decision}] | المبرر: {reason}")
+
+            # 3. تنفيذ الأوامر وفق إدارة المخاطر
+            if decision == "BUY" and cash > 2000.0:
+                # تخصيص سيولة منضبطة (بين 5,000 إلى 15,000 ج لكل مركز)
+                allocated = min(max(cash * 0.15, 3000.0), 15000.0)
+                shares = int(allocated // price)
+                if shares > 0:
+                    success, msg = execute_trade(ticker, "BUY", price, shares=shares, reason=reason)
+                    print(f"✅ {msg}" if success else f"⚠️ فشل الشراء: {msg}")
+
+            elif decision == "SELL" and item["is_owned"]:
+                success, msg = execute_trade(ticker, "SELL", price, reason=reason)
+                print(f"🔻 {msg}" if success else f"⚠️ فشل البيع: {msg}")
+
+        except Exception as err:
+            print(f"❌ خطأ أثناء تحليل {ticker}: {err}")
+
+        # انتظار ثانيتين بين كل استدعاء لتجنب حظر مفتاح الـ API
+        time.sleep(2)
+
+    print("\n🏁 اكتملت دورة الفحص بنجاح.")
+
+def start_bot(interval_seconds=120):
+    """تشغيل المحرك في حلقة تكرارية مستمرة"""
     while True:
         try:
             run_trading_cycle()
-            time.sleep(CHECK_INTERVAL_SECONDS)
-        except KeyboardInterrupt:
-            print("\n[!] Engine Stopped.")
-            break
         except Exception as e:
-            print(f"\n[!] Unexpected Error: {e}")
-            time.sleep(10)
+            print(f"حدث خطأ غير متوقع في محرك التداول: {e}")
+        print(f"\n⏳ استراحة لمدة {interval_seconds} ثانية حتى الدورة القادمة...\n")
+        time.sleep(interval_seconds)
+
+if __name__ == "__main__":
+    start_bot(interval_seconds=180)
