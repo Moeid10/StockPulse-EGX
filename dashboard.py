@@ -1,4 +1,3 @@
-from egx_assets import EGX_ASSETS
 import streamlit as st
 import json
 import os
@@ -8,6 +7,7 @@ import plotly.express as px
 from datetime import datetime
 from portfolio_manager import execute_trade, panic_liquidate
 from market_data import get_stock_metrics
+from egx_assets import EGX_ASSETS
 
 st.set_page_config(
     page_title="StockPulse EGX - AI Fund Manager",
@@ -120,10 +120,13 @@ with st.sidebar:
     st.divider()
     st.subheader("⚠️ مركز الطوارئ")
     if st.button("🚨 تسييل المحفظة بالكامل (Panic Sell)", type="primary", use_container_width=True):
-        market_prices = {
-            "MASR.CA": 7.73, "COMI.CA": 122.70, "TMGH.CA": 86.30,
-            "ISPH.CA": 3.40, "MFPC.CA": 45.0, "ABUK.CA": 60.0
-        }
+        # تجميع آخر أسعار مسجلة للمحفظة للتسييل الفوري
+        current_port = json.load(open(PORTFOLIO_FILE, "r", encoding="utf-8")) if os.path.exists(PORTFOLIO_FILE) else {}
+        market_prices = {}
+        for sym in current_port.get("holdings", {}).keys():
+            metrics = get_stock_metrics(sym)
+            market_prices[sym] = metrics.get("current_price", 10.0)
+            
         success, msg = panic_liquidate(market_prices)
         if success:
             st.success(msg)
@@ -199,11 +202,13 @@ m4.metric("العائد الإجمالي (P&L)", f"{total_pnl:,.2f} ج", delta=f
 
 st.divider()
 
-# قسم التداول اليدوي الفوري
+# قسم التداول اليدوي الفوري (يحتوي على كافة أسهم وصناديق مصر)
 with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade Override)", expanded=False):
     t_c1, t_c2, t_c3, t_c4 = st.columns(4)
     with t_c1:
-        trade_ticker = st.selectbox("اختر السهم", ["MASR.CA", "COMI.CA", "TMGH.CA", "ISPH.CA", "MFPC.CA", "ABUK.CA"])
+        asset_names = list(EGX_ASSETS.keys())
+        selected_label = st.selectbox("اختر السهم أو الصندوق للتداول", asset_names)
+        trade_ticker = EGX_ASSETS[selected_label]
     with t_c2:
         trade_type = st.selectbox("نوع العملية", ["BUY", "SELL"])
     with t_c3:
