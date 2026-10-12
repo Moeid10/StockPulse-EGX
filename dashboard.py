@@ -4,7 +4,14 @@ import plotly.express as px
 from datetime import datetime
 from market_data import get_stock_metrics
 from egx_assets import EGX_ASSETS
-from database import verify_user, register_user, get_user_portfolio, execute_user_trade, panic_liquidate_user
+from database import (
+    verify_user, 
+    register_user, 
+    get_user_portfolio, 
+    execute_user_trade, 
+    panic_liquidate_user,
+    get_all_users_summary
+)
 
 st.set_page_config(
     page_title="StockPulse | Thndr Edition",
@@ -13,22 +20,22 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ثيم وتصميم مستوحى من Thndr & Telda (Dark Emerald Minimalist)
+# ثيم وتنسيق مستوحى من Thndr & Telda (Dark Emerald Minimalist)
 st.markdown("""
 <meta name="google" content="notranslate">
 <style>
-    /* ألوان وخلفية ثاندر وتيلدا الهادئة */
+    /* خلفية هادئة ومريحة للعين */
     .stApp {
         background-color: #0c0d12 !important;
         color: #f1f5f9 !important;
     }
 
-    /* كروت ناعمة ومريحة للعين */
+    /* كروت ناعمة بتصميم عصري */
     .thndr-card {
         background: #141721;
         border: 1px solid #1f2433;
         border-radius: 18px;
-        padding: 22px 24px;
+        padding: 20px 24px;
         margin-bottom: 20px;
         direction: rtl;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
@@ -43,10 +50,9 @@ st.markdown("""
     }
 
     .thndr-title {
-        font-size: 1.55rem;
+        font-size: 1.5rem;
         font-weight: 800;
         color: #ffffff;
-        letter-spacing: -0.5px;
         margin: 0;
     }
 
@@ -60,7 +66,7 @@ st.markdown("""
         font-weight: 700;
     }
 
-    /* كروت المؤشرات المالية (Thndr Metric Cards) */
+    /* كروت المؤشرات المالية المتجاوبة للموبايل */
     .metrics-wrapper {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -108,7 +114,7 @@ st.markdown("""
         margin-top: 4px;
     }
 
-    /* تنسيق الجداول لتشبه تطبيقات التداول الحديثة */
+    /* تنسيق الجداول */
     .stTable table {
         background: #141721 !important;
         border-radius: 14px !important;
@@ -132,7 +138,7 @@ st.markdown("""
         text-align: right !important;
     }
 
-    /* تحسين الأزرار وحقول الإدخال */
+    /* الحاويات والأزرار */
     div[data-testid="stExpander"] {
         background: #141721 !important;
         border: 1px solid #1e2330 !important;
@@ -153,11 +159,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# إدارة حالة تسجيل الدخول
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
 
-# ----------------- تسجيل الدخول -----------------
+# شاشة تسجيل الدخول
 if not st.session_state["authenticated"]:
     _, col_auth, _ = st.columns([1, 2, 1])
     with col_auth:
@@ -195,7 +202,7 @@ if not st.session_state["authenticated"]:
                 else:
                     ok, msg = register_user(reg_user, reg_pass)
                     if ok:
-                        st.success("تم تفعيل حسابك بنجاح! تفضل بتسجيل الدخول.")
+                        st.success("تم تفعيل حسابك بنجاح! يمكنك الآن تسجيل الدخول.")
                     else:
                         st.error(msg)
     st.stop()
@@ -203,15 +210,32 @@ if not st.session_state["authenticated"]:
 # ----------------- الشاشة الرئيسية -----------------
 current_user = st.session_state["username"]
 
+# القائمة الجانبية
 with st.sidebar:
-    st.markdown(f"**المستخدم:** `{current_user}` 👤")
+    st.markdown(f"**المستخدم الحالي:** `{current_user}` 👤")
     if st.button("تسجيل الخروج", use_container_width=True):
         st.session_state["authenticated"] = False
         st.session_state["username"] = ""
         st.rerun()
 
     st.divider()
-    st.markdown("<p style='color: #ff5252; font-weight: 700; font-size: 0.85rem;'>⚠️ إدارة المخاطر القصوى</p>", unsafe_allow_html=True)
+    
+    # قسم الإدارة للوصول لبيانات جميع المستخدمين
+    with st.expander("👑 بيانات ومحافظ المسجلين"):
+        all_users = get_all_users_summary()
+        if all_users:
+            df_users = pd.DataFrame(all_users)
+            df_users.rename(columns={
+                "username": "المستخدم",
+                "created_at": "تاريخ التسجيل",
+                "cash": "السيولة (ج)"
+            }, inplace=True)
+            st.dataframe(df_users, hide_index=True)
+        else:
+            st.caption("لا يوجد مستخدمون مسجلون.")
+
+    st.divider()
+    st.markdown("<p style='color: #ff5252; font-weight: 700; font-size: 0.85rem;'>⚠️ إدارة المخاطر</p>", unsafe_allow_html=True)
     if st.button("🚨 تسييل المحفظة (Panic Sell)", type="primary", use_container_width=True):
         u_port = get_user_portfolio(current_user)
         market_prices = {}
@@ -225,7 +249,7 @@ with st.sidebar:
         else:
             st.warning(msg)
 
-# جلب بيانات المحفظة بعد التأكد التام
+# جلب بيانات المحفظة وحساب القيم
 port = get_user_portfolio(current_user)
 cash = float(port.get("cash", 100000.0))
 holdings = port.get("holdings", {})
@@ -259,21 +283,21 @@ total_pnl_pct = (total_pnl / initial_capital) * 100
 pnl_class = "m-sub-up" if total_pnl >= 0 else "m-sub-down"
 pnl_sign = "+" if total_pnl >= 0 else ""
 
-# 1. الترويسة الأنيقة
+# 1. الترويسة الرئيسية
 now_str = datetime.now().strftime("%I:%M %p")
 st.markdown(f"""
     <div class="thndr-card">
         <div class="thndr-header">
             <div>
                 <h2 class="thndr-title">⚡ StockPulse • محفظة {current_user}</h2>
-                <div style="color: #8b949e; font-size: 0.85rem; margin-top: 4px;">تداول آلي كمي مدعوم بالذكاء الاصطناعي</div>
+                <div style="color: #8b949e; font-size: 0.85rem; margin-top: 4px;">تداول آلي كمي مدعوم بالذكاء الاصطناعي وإدارة المخاطر</div>
             </div>
             <div class="thndr-tag">● السوق نشط • {now_str}</div>
         </div>
     </div>
 """, unsafe_allow_html=True)
 
-# 2. كروت المؤشرات بستايل Thndr المريح
+# 2. كروت المؤشرات المالية بستايل Thndr
 st.markdown(f"""
     <div class="metrics-wrapper">
         <div class="m-card">
@@ -296,7 +320,7 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# 3. التداول اليدوي الفوري المضمون
+# 3. تنفيذ صفقة يدوية فورية
 with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade)", expanded=False):
     t1, t2, t3, t4 = st.columns([2, 1, 1, 1.2])
     with t1:
@@ -374,7 +398,7 @@ with c2:
 
 st.divider()
 
-# 5. الجداول بتنسيق واضح
+# 5. الجداول
 st.subheader("📌 الأسهم المملوكة حالياً")
 if holdings_rows:
     st.table(pd.DataFrame(holdings_rows))
