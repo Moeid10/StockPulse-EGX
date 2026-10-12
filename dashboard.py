@@ -15,21 +15,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# ضبط الاتجاه العربي ومنع الترجمة التلقائية
+# منع المتصفح من تشويه النصوص بدون كسر الجداول
 st.markdown("""
     <meta name="google" content="notranslate">
     <style>
-    html, body, [class*="css"], div, p, span, h1, h2, h3, label {
-        direction: rtl !important;
-        text-align: right !important;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
     .notranslate {
         translate: no !important;
     }
-    [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {
-        direction: ltr !important;
-        text-align: right !important;
+    h1, h2, h3, p, span {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -91,7 +85,7 @@ if not st.session_state["authenticated"]:
                 else:
                     users[reg_user] = hash_pass(reg_pass)
                     save_users(users)
-                    st.success("تم إنشاء الحساب بنجاح! تفضل بالدخول الآن.")
+                    st.success("تم إنشاء الحساب بنجاح! يمكنك تسجيل الدخول الآن.")
 
     st.stop()
 
@@ -248,40 +242,39 @@ with c_chart2:
 
 st.divider()
 
-# جداول المراكز وتفسيرات الصفقات
-col_left, col_right = st.columns([1, 1.4])
+# قسم الجداول عبر st.table لعرض نصوص كاملة ومستقرة بدون تشويه
+st.subheader("📌 الأسهم المملوكة حالياً")
+if holdings_rows:
+    df_holdings = pd.DataFrame(holdings_rows)
+    st.table(df_holdings)
+else:
+    st.info("لا توجد أسهم مملوكة حالياً.")
 
-with col_left:
-    st.subheader("📌 الأسهم المملوكة حالياً")
-    if holdings_rows:
-        df_holdings = pd.DataFrame(holdings_rows)
-        st.dataframe(df_holdings, use_container_width=True, hide_index=True)
-    else:
-        st.info("لا توجد أسهم مملوكة حالياً.")
+st.divider()
 
-with col_right:
-    st.subheader("📜 آخر صفقات ومبررات الذكاء الاصطناعي")
-    if trade_history:
-        recent = list(reversed(trade_history[-6:]))
-        table_data = []
-        for t in recent:
-            time_str = t.get("date", "").split()[-1] if " " in t.get("date", "") else t.get("date", "")
-            p_val = float(t.get("price", 0.0))
-            s_val = int(t.get("shares", 0))
-            tot = float(t.get("total_value", p_val * s_val))
-            reason = t.get("reason", "تنفيذ آلي")
-            
-            table_data.append({
-                "التوقيت": time_str,
-                "السهم": t.get("symbol", ""),
-                "العملية": "🟢 شراء" if t.get("type") == "BUY" else "🔴 بيع",
-                "الكمية": s_val,
-                "السعر": f"{p_val:.2f} ج",
-                "الإجمالي": f"{tot:,.2f} ج",
-                "مبرر القرار (AI Reasoning)": reason
-            })
-            
-        df_trades = pd.DataFrame(table_data)
-        st.dataframe(df_trades, use_container_width=True, hide_index=True)
-    else:
-        st.info("لم يتم تسجيل صفقات بعد.")
+st.subheader("📜 آخر صفقات ومبررات الذكاء الاصطناعي")
+if trade_history:
+    recent = list(reversed(trade_history[-6:]))
+    table_data = []
+    for t in recent:
+        time_str = t.get("date", "").split()[-1] if " " in t.get("date", "") else t.get("date", "")
+        p_val = float(t.get("price", 0.0))
+        s_val = int(t.get("shares", 0))
+        tot = float(t.get("total_value", p_val * s_val))
+        reason = t.get("reason", "تنفيذ آلي")
+        action_tag = "🟢 شراء" if t.get("type") == "BUY" else "🔴 بيع"
+        
+        table_data.append({
+            "التوقيت": time_str,
+            "السهم": t.get("symbol", ""),
+            "العملية": action_tag,
+            "الكمية": s_val,
+            "السعر": f"{p_val:.2f} ج",
+            "الإجمالي": f"{tot:,.2f} ج",
+            "مبرر القرار": reason
+        })
+        
+    df_trades = pd.DataFrame(table_data)
+    st.table(df_trades)
+else:
+    st.info("لم يتم تسجيل صفقات بعد.")
