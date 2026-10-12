@@ -53,7 +53,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
             symbol TEXT NOT NULL,
-            type TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'BUY',
             price REAL NOT NULL,
             shares INTEGER NOT NULL,
             total_value REAL NOT NULL DEFAULT 0.0,
@@ -63,16 +63,13 @@ def init_db():
         )
     """)
     
-    # تحديث وتوافق تلقائي لأعمدة جدول trades القديمة
-    c.execute("PRAGMA table_info(trades)")
-    cols = [col[1] for col in c.fetchall()]
-    
-    if "type" not in cols:
-        c.execute("ALTER TABLE trades ADD COLUMN type TEXT DEFAULT 'BUY'")
-    if "total_value" not in cols:
-        c.execute("ALTER TABLE trades ADD COLUMN total_value REAL NOT NULL DEFAULT 0.0")
-    if "reason" not in cols:
-        c.execute("ALTER TABLE trades ADD COLUMN reason TEXT DEFAULT ''")
+    # التأكد من وجود مستخدم admin افتراضي
+    c.execute("SELECT username FROM users WHERE username = 'admin'")
+    if not c.fetchone():
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        pwd_hash = hash_password("admin123")
+        c.execute("INSERT OR IGNORE INTO users (username, password_hash, created_at) VALUES ('admin', ?, ?)", (pwd_hash, now))
+        c.execute("INSERT OR IGNORE INTO portfolios (username, cash) VALUES ('admin', 100000.0)")
     
     conn.commit()
     conn.close()
@@ -130,10 +127,8 @@ def get_user_portfolio(username: str):
     trades = []
     for t in t_rows:
         td = dict(t)
-        # توافق مع المسميات القديمة إذا وجدت
-        trade_type = td.get("type") or td.get("action") or "BUY"
-        td["type"] = trade_type
-        
+        if "type" not in td or not td["type"]:
+            td["type"] = "BUY"
         if "total_value" not in td or td["total_value"] is None:
             td["total_value"] = round(float(td.get("price", 0.0)) * int(td.get("shares", 0)), 2)
         if "reason" not in td or td["reason"] is None:
@@ -168,11 +163,6 @@ def execute_user_trade(username: str, symbol: str, trade_type: str, price: float
         
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # فحص الأعمدة المتاحة في جدول trades لدعم كلا الاسمين (type أو action)
-        c.execute("PRAGMA table_info(trades)")
-        cols = [col[1] for col in c.fetchall()]
-        type_col = "type" if "type" in cols else "action"
-        
         if trade_type.upper() == "BUY":
             if current_cash < total_cost:
                 return False, f"السيولة النقدية غير كافية ({current_cash:,.2f} ج)."
@@ -188,11 +178,10 @@ def execute_user_trade(username: str, symbol: str, trade_type: str, price: float
                 ON CONFLICT(username, symbol) DO UPDATE SET shares = ?, avg_price = ?
             """, (username, symbol, new_shares, new_avg, new_shares, new_avg))
             
-            query = f"""
-                INSERT INTO trades (username, symbol, {type_col}, price, shares, total_value, reason, date)
+            c.execute("""
+                INSERT INTO trades (username, symbol, type, price, shares, total_value, reason, date)
                 VALUES (?, ?, 'BUY', ?, ?, ?, ?, ?)
-            """
-            c.execute(query, (username, symbol, price, shares, total_cost, reason, now))
+            """, (username, symbol, price, shares, total_cost, reason, now))
             
             conn.commit()
             return True, f"تم شراء {shares} سهم من {symbol} بنجاح."
@@ -210,11 +199,10 @@ def execute_user_trade(username: str, symbol: str, trade_type: str, price: float
             else:
                 c.execute("UPDATE holdings SET shares = ? WHERE username = ? AND symbol = ?", (new_shares, username, symbol))
                 
-            query = f"""
-                INSERT INTO trades (username, symbol, {type_col}, price, shares, total_value, reason, date)
+            c.execute("""
+                INSERT INTO trades (username, symbol, type, price, shares, total_value, reason, date)
                 VALUES (?, ?, 'SELL', ?, ?, ?, ?, ?)
-            """
-            c.execute(query, (username, symbol, price, shares, total_cost, reason, now))
+            """, (username, symbol, price, shares, total_cost, reason, now))
             
             conn.commit()
             return True, f"تم بيع {shares} سهم من {symbol} بنجاح."
@@ -238,10 +226,6 @@ def panic_liquidate_user(username: str, market_prices: dict):
         if not holdings:
             return False, "المحفظة خالية بالفعل من أي أسهم."
         
-        c.execute("PRAGMA table_info(trades)")
-        cols = [col[1] for col in c.fetchall()]
-        type_col = "type" if "type" in cols else "action"
-        
         recovered_cash = 0.0
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -252,11 +236,10 @@ def panic_liquidate_user(username: str, market_prices: dict):
             val = round(cur_price * qty, 2)
             recovered_cash += val
             
-            query = f"""
-                INSERT INTO trades (username, symbol, {type_col}, price, shares, total_value, reason, date)
+            c.execute("""
+                INSERT INTO trades (username, symbol, type, price, shares, total_value, reason, date)
                 VALUES (?, ?, 'SELL', ?, ?, ?, '🚨 تسييل طارئ كامل (Panic Liquidation)', ?)
-            """
-            c.execute(query, (username, sym, cur_price, qty, val, now))
+            """, (username, sym, cur_price, qty, val, now))
             
         c.execute("DELETE FROM holdings WHERE username = ?", (username,))
         c.execute("UPDATE portfolios SET cash = cash + ? WHERE username = ?", (recovered_cash, username))
