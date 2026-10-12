@@ -1,0 +1,36 @@
+name: EGX Auto Trader Bot
+
+on:
+  schedule:
+    # يعمل تلقائياً كل 15 دقيقة في أوقات جلسات تداول البورصة المصرية
+    - cron: '*/15 8-13 * * 0-4'
+  workflow_dispatch:
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Auto Trader
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python auto_trader.py
+
+      - name: Commit and Push DB Changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add stockpulse.db
+          git commit -m "Auto Trader DB update [skip ci]" || exit 0
+          git push
