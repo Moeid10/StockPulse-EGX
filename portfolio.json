@@ -1,0 +1,51 @@
+{
+    "cash": 64051.490000000005,
+    "starting_balance": 100000.0,
+    "holdings": {
+        "MASR.CA": 2587,
+        "COMI.CA": {
+            "shares": 130,
+            "avg_price": 122.7,
+            "buy_date": "2026-10-12 21:16:59"
+        }
+    },
+    "trade_history": [
+        {
+            "time": "2026-10-12 21:14:02",
+            "symbol": "MASR.CA",
+            "action": "BUY",
+            "shares": 2587,
+            "price": 7.73,
+            "total_cost": 19997.51
+        },
+        {
+            "date": "2026-10-12 21:16:59",
+            "symbol": "COMI.CA",
+            "type": "BUY",
+            "shares": 130,
+            "price": 122.7,
+            "total_value": 15951.0,
+            "reason": "BUY The RSI of 24.09 indicates the stock is deeply oversold, suggesting a high probability of a short-term technical rebound despite the bearish trend."
+        },
+        {
+            "date": "2026-10-12 22:49:04",
+            "symbol": "TMGH.CA",
+            "type": "BUY",
+            "shares": 148,
+            "price": 86.3,
+            "total_value": 12772.4,
+            "reason": "BUY The RSI of 25.91 indicates the stock is oversold, suggesting a potential short-term rebound despite the bearish trend."
+        },
+        {
+            "date": "2026-10-12 22:50:08",
+            "symbol": "TMGH.CA",
+            "type": "SELL",
+            "shares": 148,
+            "price": 86.3,
+            "total_value": 12772.4,
+            "profit_loss": 0.0,
+            "profit_pct": "0.00%",
+            "reason": "SELL The stock is in a bearish trend with an RSI of 25.91 indicating oversold conditions, but the price remains significantly below the 20-day SMA, suggesting continued downward momentum."
+        }
+    ]
+}
