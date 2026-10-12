@@ -24,13 +24,11 @@ st.set_page_config(
 st.markdown("""
 <meta name="google" content="notranslate">
 <style>
-    /* خلفية هادئة ومريحة للعين */
     .stApp {
         background-color: #0c0d12 !important;
         color: #f1f5f9 !important;
     }
 
-    /* كروت ناعمة بتصميم عصري */
     .thndr-card {
         background: #141721;
         border: 1px solid #1f2433;
@@ -66,7 +64,6 @@ st.markdown("""
         font-weight: 700;
     }
 
-    /* كروت المؤشرات المالية المتجاوبة للموبايل */
     .metrics-wrapper {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -114,7 +111,6 @@ st.markdown("""
         margin-top: 4px;
     }
 
-    /* تنسيق الجداول */
     .stTable table {
         background: #141721 !important;
         border-radius: 14px !important;
@@ -138,7 +134,6 @@ st.markdown("""
         text-align: right !important;
     }
 
-    /* الحاويات والأزرار */
     div[data-testid="stExpander"] {
         background: #141721 !important;
         border: 1px solid #1e2330 !important;
@@ -159,12 +154,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# إدارة حالة تسجيل الدخول
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
 
-# شاشة تسجيل الدخول
+# ----------------- تسجيل الدخول -----------------
 if not st.session_state["authenticated"]:
     _, col_auth, _ = st.columns([1, 2, 1])
     with col_auth:
@@ -210,7 +204,6 @@ if not st.session_state["authenticated"]:
 # ----------------- الشاشة الرئيسية -----------------
 current_user = st.session_state["username"]
 
-# القائمة الجانبية
 with st.sidebar:
     st.markdown(f"**المستخدم الحالي:** `{current_user}` 👤")
     if st.button("تسجيل الخروج", use_container_width=True):
@@ -220,7 +213,6 @@ with st.sidebar:
 
     st.divider()
     
-    # قسم الإدارة للوصول لبيانات جميع المستخدمين
     with st.expander("👑 بيانات ومحافظ المسجلين"):
         all_users = get_all_users_summary()
         if all_users:
@@ -297,7 +289,7 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# 2. كروت المؤشرات المالية بستايل Thndr
+# 2. كروت المؤشرات
 st.markdown(f"""
     <div class="metrics-wrapper">
         <div class="m-card">
@@ -324,109 +316,4 @@ st.markdown(f"""
 with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade)", expanded=False):
     t1, t2, t3, t4 = st.columns([2, 1, 1, 1.2])
     with t1:
-        asset_names = list(EGX_ASSETS.keys())
-        selected_label = st.selectbox("اختر السهم / الأصل", asset_names)
-        trade_ticker = EGX_ASSETS[selected_label]
-    with t2:
-        trade_type = st.selectbox("نوع العملية", ["BUY", "SELL"])
-    with t3:
-        trade_shares = st.number_input("الكمية", min_value=1, value=100, step=10)
-    with t4:
-        st.write("")
-        st.write("")
-        if st.button("🚀 تأكيد العملية", use_container_width=True, type="primary"):
-            metrics = get_stock_metrics(trade_ticker)
-            exec_price = metrics.get("current_price", 10.0)
-            suc, message = execute_user_trade(
-                current_user,
-                trade_ticker,
-                trade_type,
-                exec_price,
-                int(trade_shares),
-                reason="تنفيذ يدوي مباشر من لوحة التحكم"
-            )
-            if suc:
-                st.success(message)
-                st.rerun()
-            else:
-                st.error(message)
-
-# 4. الرسوم البيانية بألوان Thndr
-c1, c2 = st.columns(2)
-
-with c1:
-    fig_donut = px.pie(
-        names=allocation_labels,
-        values=allocation_values,
-        hole=0.6,
-        title="توزيع الأصول والمراكز",
-        color_discrete_sequence=['#00E676', '#1E88E5', '#FFB300', '#D81B60', '#8E24AA']
-    )
-    fig_donut.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#0c0d12', width=2)))
-    fig_donut.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#8b949e'),
-        margin=dict(t=40, b=10, l=10, r=10),
-        showlegend=False
-    )
-    st.plotly_chart(fig_donut, use_container_width=True)
-
-with c2:
-    if trade_history:
-        df_trades = pd.DataFrame(trade_history)
-        fig_bar = px.bar(
-            df_trades.tail(7),
-            x="symbol",
-            y="total_value",
-            color="type",
-            color_discrete_map={"BUY": "#00E676", "SELL": "#ff5252"},
-            title="أحدث الصفقات المنفذة",
-            labels={"symbol": "السهم", "total_value": "القيمة (ج)", "type": "العملية"}
-        )
-        fig_bar.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#8b949e'),
-            margin=dict(t=40, b=10, l=10, r=10),
-            xaxis=dict(showgrid=False),
-            yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)')
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-    else:
-        st.info("لا توجد صفقات لعرض المسار البياني.")
-
-st.divider()
-
-# 5. الجداول
-st.subheader("📌 الأسهم المملوكة حالياً")
-if holdings_rows:
-    st.table(pd.DataFrame(holdings_rows))
-else:
-    st.info("لا توجد أسهم في المحفظة حالياً.")
-
-st.divider()
-
-st.subheader("📜 آخر الصفقات ومبررات الذكاء الاصطناعي")
-if trade_history:
-    recent = trade_history[:6]
-    table_data = []
-    for t in recent:
-        time_str = t.get("date", "").split()[-1] if " " in t.get("date", "") else t.get("date", "")
-        p_val = float(t.get("price", 0.0))
-        s_val = int(t.get("shares", 0))
-        tot = float(t.get("total_value", p_val * s_val))
-        action_tag = "🟢 شراء" if t.get("type") == "BUY" else "🔴 بيع"
-        
-        table_data.append({
-            "الوقت": time_str,
-            "السهم": t.get("symbol", ""),
-            "العملية": action_tag,
-            "الكمية": f"{s_val:,}",
-            "السعر": f"{p_val:.2f} ج",
-            "الإجمالي": f"{tot:,.2f} ج",
-            "مبرر الذكاء الاصطناعي": t.get("reason", "تنفيذ استراتيجي آلي")
-        })
-    st.table(pd.DataFrame(table_data))
-else:
-    st.info("لم يتم تسجيل أي صفقات بعد.")
+        asset_names = list(EGX
