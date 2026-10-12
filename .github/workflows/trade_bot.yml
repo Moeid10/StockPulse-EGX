@@ -2,6 +2,7 @@ name: EGX Auto Trader Bot
 
 on:
   schedule:
+    # يعمل تلقائياً كل 15 دقيقة في أوقات جلسات تداول البورصة المصرية
     - cron: '*/15 8-13 * * 0-4'
   workflow_dispatch:
 
@@ -13,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -35,4 +38,5 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add stockpulse.db
           git commit -m "Auto Trader DB update [skip ci]" || exit 0
-          git push
+          git pull --rebase origin main || true
+          git push origin main
