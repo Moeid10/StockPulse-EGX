@@ -1,98 +1,84 @@
 import time
 from market_data import get_stock_metrics
 from financial_agent import analyze_market
-from portfolio_manager import execute_trade, load_portfolio
 from egx_assets import EGX_ASSETS
+from database import get_db, get_user_portfolio, execute_user_trade
+
+STOP_LOSS_PCT = -0.03    # وقف خسارة عند هبوط 3%
+TAKE_PROFIT_PCT = 0.06   # جني أرباح عند صعود 6%
 
 def run_trading_cycle():
     print("\n" + "="*50)
-    print("🚀 بدء دورة فحص السوق ومسح أسهم وصناديق البورصة المصرية...")
+    print("🚀 بدء دورة الفحص الشامل وإدارة المخاطر للبورصة المصرية...")
     print("="*50)
 
-    portfolio = load_portfolio()
-    cash = portfolio.get("cash", 0.0)
-    holdings = portfolio.get("holdings", {})
+    # جلب جميع المستخدمين المسجلين في النظام
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT username FROM users")
+    users = [r["username"] for r in c.fetchall()]
+    conn.close()
 
-    print(f"💰 السيولة النقدية المتاحة: {cash:,.2f} ج | المراكز المفتوحة: {len(holdings)}")
-
-    # 1. مسح السوق وتجميع الإشارات الفنية الأولية
+    # مسح السوق وتجميع الأسعار
+    active_metrics = {}
     candidates = []
-    
+
     for name, ticker in EGX_ASSETS.items():
         try:
-            metrics = get_stock_metrics(ticker)
-            if "error" in metrics:
+            m = get_stock_metrics(ticker)
+            if "error" in m:
                 continue
-
-            rsi = metrics.get("rsi", 50.0)
-            trend = metrics.get("trend", "NEUTRAL")
-            price = metrics.get("current_price", 0.0)
-
-            # ترشيح الأسهم في مناطق شراء محتملة (تشبع بيعي أو اتجاه صاعد)
-            # أو الأسهم المملوكة حالياً لفحص إمكانية جني الأرباح / وقف الخسارة
-            is_owned = ticker in holdings
-            is_oversold = rsi < 42
-            is_overbought = rsi > 68
-            
-            if is_owned or is_oversold or (trend == "BULLISH" and rsi < 55):
-                candidates.append({
-                    "name": name,
-                    "ticker": ticker,
-                    "metrics": metrics,
-                    "is_owned": is_owned
-                })
-        except Exception as e:
-            print(f"تخطي {ticker} بسبب خطأ في البيانات: {e}")
+            active_metrics[ticker] = m
+            rsi = m.get("rsi", 50.0)
+            trend = m.get("trend", "NEUTRAL")
+            if rsi < 42 or (trend == "BULLISH" and rsi < 55):
+                candidates.append((ticker, name, m))
+        except Exception:
             continue
 
-    print(f"🔍 تم ترشيح {len(candidates)} أصل/سهم لإخضاعها لتحليل الذكاء الاصطناعي المزدوج.")
+    print(f"📊 تم رصد {len(candidates)} سهم في نطاق إشارات شراء فنية محتملة.")
 
-    # 2. فحص المرشحين عبر DeepSeek-R1 و Llama-3.3-70B
-    for item in candidates[:6]:  # فحص أبرز 6 فرص في كل دورة لتفادي الـ Rate Limits
-        ticker = item["ticker"]
-        name = item["name"]
-        metrics = item["metrics"]
-        price = metrics["current_price"]
+    # تطبيق استراتيجيات التداول وإدارة المخاطر على محفظة كل مستخدم بشكل معزول
+    for username in users:
+        port = get_user_portfolio(username)
+        cash = port["cash"]
+        holdings = port["holdings"]
 
-        print(f"\n🧠 جاري استشارة الذكاء الاصطناعي لسهم: {name} ({ticker}) - السعر: {price:.2f} ج...")
+        # 1. إدارة المخاطر التلقائية (Stop-Loss & Take-Profit) للأسهم الحالية
+        for sym, h_info in list(holdings.items()):
+            shares = h_info["shares"]
+            avg_p = h_info["avg_price"]
+            curr_p = active_metrics.get(sym, {}).get("current_price", avg_p)
+            change = (curr_p - avg_p) / avg_p if avg_p > 0 else 0.0
 
-        try:
-            decision_data = analyze_market(ticker, metrics, holdings)
-            decision = decision_data.get("decision", "HOLD")
-            reason = decision_data.get("reason", "لا توجد أسباب كافية للتنفيذ")
+            if change <= STOP_LOSS_PCT:
+                execute_user_trade(username, sym, "SELL", curr_p, shares=shares, 
+                                   reason=f"تفعيل وقف الخسارة التلقائي (خسارة {change*100:.1f}%)")
+                print(f"🛑 [وقف خسارة - {username}] تم بيع {sym} لحماية رأس المال.")
+            elif change >= TAKE_PROFIT_PCT:
+                execute_user_trade(username, sym, "SELL", curr_p, shares=shares, 
+                                   reason=f"تفعيل جني الأرباح التلقائي (ربح +{change*100:.1f}%)")
+                print(f"🎯 [جني أرباح - {username}] تم بيع {sym} وتأمين الأرباح.")
 
-            print(f"📋 القرار النهائي: [{decision}] | المبرر: {reason}")
-
-            # 3. تنفيذ الأوامر وفق إدارة المخاطر
-            if decision == "BUY" and cash > 2000.0:
-                # تخصيص سيولة منضبطة (بين 5,000 إلى 15,000 ج لكل مركز)
-                allocated = min(max(cash * 0.15, 3000.0), 15000.0)
-                shares = int(allocated // price)
-                if shares > 0:
-                    success, msg = execute_trade(ticker, "BUY", price, shares=shares, reason=reason)
-                    print(f"✅ {msg}" if success else f"⚠️ فشل الشراء: {msg}")
-
-            elif decision == "SELL" and item["is_owned"]:
-                success, msg = execute_trade(ticker, "SELL", price, reason=reason)
-                print(f"🔻 {msg}" if success else f"⚠️ فشل البيع: {msg}")
-
-        except Exception as err:
-            print(f"❌ خطأ أثناء تحليل {ticker}: {err}")
-
-        # انتظار ثانيتين بين كل استدعاء لتجنب حظر مفتاح الـ API
-        time.sleep(2)
-
-    print("\n🏁 اكتملت دورة الفحص بنجاح.")
-
-def start_bot(interval_seconds=120):
-    """تشغيل المحرك في حلقة تكرارية مستمرة"""
-    while True:
-        try:
-            run_trading_cycle()
-        except Exception as e:
-            print(f"حدث خطأ غير متوقع في محرك التداول: {e}")
-        print(f"\n⏳ استراحة لمدة {interval_seconds} ثانية حتى الدورة القادمة...\n")
-        time.sleep(interval_seconds)
+        # 2. فحص أفضل الفرص بالذكاء الاصطناعي والشراء عند توفر السيولة
+        if cash > 3000.0:
+            for ticker, name, metrics in candidates[:3]:
+                if ticker in holdings:
+                    continue
+                try:
+                    decision_data = analyze_market(ticker, metrics, holdings)
+                    if decision_data.get("decision") == "BUY":
+                        price = metrics["current_price"]
+                        allocated = min(max(cash * 0.15, 3000.0), 15000.0)
+                        shares_to_buy = int(allocated // price)
+                        if shares_to_buy > 0:
+                            reason = decision_data.get("reason", "فرصة استثمارية واعدة")
+                            execute_user_trade(username, ticker, "BUY", price, shares=shares_to_buy, reason=reason)
+                            print(f"✅ [شراء - {username}] {ticker} | {reason}")
+                            cash -= (shares_to_buy * price)
+                except Exception as err:
+                    print(f"خطأ في التحليل: {err}")
+                time.sleep(1.5)
 
 if __name__ == "__main__":
-    start_bot(interval_seconds=180)
+    run_trading_cycle()
