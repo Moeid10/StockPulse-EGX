@@ -15,20 +15,21 @@ st.set_page_config(
     layout="wide"
 )
 
-# منع المتصفح من تشويه النصوص بدون كسر الجداول
+# ضبط الاتجاه العام بدون كسر تنسيق الجداول
 st.markdown("""
     <meta name="google" content="notranslate">
     <style>
     .notranslate {
         translate: no !important;
     }
-    h1, h2, h3, p, span {
+    h1, h2, h3, h4, p, span, label {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        text-align: right;
+        direction: rtl;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# ----------------- نظام المستخدمين -----------------
 USERS_FILE = "users.json"
 PORTFOLIO_FILE = "portfolio.json"
 
@@ -85,11 +86,11 @@ if not st.session_state["authenticated"]:
                 else:
                     users[reg_user] = hash_pass(reg_pass)
                     save_users(users)
-                    st.success("تم إنشاء الحساب بنجاح! يمكنك تسجيل الدخول الآن.")
+                    st.success("تم إنشاء الحساب بنجاح! تفضل بالدخول الآن.")
 
     st.stop()
 
-# ----------------- لوحة التحكم بعد تسجيل الدخول -----------------
+# ----------------- لوحة التحكم بعد الدخول -----------------
 
 with st.sidebar:
     st.write(f"المستخدم: **{st.session_state['username']}** 👤")
@@ -109,7 +110,7 @@ with st.sidebar:
             
         success, msg = panic_liquidate(market_prices)
         if success:
-            st.success(msg)
+            st.success("تم تسييل كافة المراكز وتحويلها إلى كاش بنجاح.")
             st.rerun()
         else:
             st.warning(msg)
@@ -120,7 +121,7 @@ def load_portfolio():
     with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# ترويسة المنصة
+# ترويسة اللوحة
 col_t1, col_t2 = st.columns([3, 1])
 with col_t1:
     st.title("📊 منصة إدارة الاستثمار الآلي للبورصة المصرية")
@@ -242,7 +243,22 @@ with c_chart2:
 
 st.divider()
 
-# قسم الجداول عبر st.table لعرض نصوص كاملة ومستقرة بدون تشويه
+# دالة مساعدة لتعريب الأسباب القديمة المسجلة بالإنجليزية
+def translate_reason_to_arabic(eng_reason):
+    if not eng_reason or eng_reason == "None":
+        return "تنفيذ استراتيجي آلي بناءً على مؤشرات السوق"
+    r = eng_reason.lower()
+    if "rebound" in r or "oversold" in r:
+        return "ارتداد فني متوقع من منطقة تشبع بيعي"
+    if "below the 20-day sma" in r or "downward momentum" in r:
+        return "كسر المتوسط المتحرك 20 يوم لأسفل واستمرار الزخم الهابط"
+    if "panic sell" in r:
+        return "تسييل اضطراري شامل لتقليص المخاطر"
+    if "manual" in r:
+        return "تنفيذ يدوي مباشر من لوحة التحكم"
+    return eng_reason
+
+# عرض جدول المراكز المملوكة
 st.subheader("📌 الأسهم المملوكة حالياً")
 if holdings_rows:
     df_holdings = pd.DataFrame(holdings_rows)
@@ -252,6 +268,7 @@ else:
 
 st.divider()
 
+# عرض جدول الصفقات مع المبرر باللغة العربية
 st.subheader("📜 آخر صفقات ومبررات الذكاء الاصطناعي")
 if trade_history:
     recent = list(reversed(trade_history[-6:]))
@@ -261,7 +278,8 @@ if trade_history:
         p_val = float(t.get("price", 0.0))
         s_val = int(t.get("shares", 0))
         tot = float(t.get("total_value", p_val * s_val))
-        reason = t.get("reason", "تنفيذ آلي")
+        raw_reason = t.get("reason", "تنفيذ استراتيجي")
+        arabic_reason = translate_reason_to_arabic(raw_reason)
         action_tag = "🟢 شراء" if t.get("type") == "BUY" else "🔴 بيع"
         
         table_data.append({
@@ -271,7 +289,7 @@ if trade_history:
             "الكمية": s_val,
             "السعر": f"{p_val:.2f} ج",
             "الإجمالي": f"{tot:,.2f} ج",
-            "مبرر القرار": reason
+            "مبرر الذكاء الاصطناعي": arabic_reason
         })
         
     df_trades = pd.DataFrame(table_data)
