@@ -56,12 +56,20 @@ def init_db():
             type TEXT NOT NULL,
             price REAL NOT NULL,
             shares INTEGER NOT NULL,
-            total_value REAL NOT NULL,
-            reason TEXT,
+            total_value REAL NOT NULL DEFAULT 0.0,
+            reason TEXT DEFAULT '',
             date TEXT NOT NULL,
             FOREIGN KEY(username) REFERENCES users(username)
         )
     """)
+    
+    # فحص تلقائي للأعمدة وتحديثها في حال كانت القاعدة قديمة
+    c.execute("PRAGMA table_info(trades)")
+    cols = [col[1] for col in c.fetchall()]
+    if "total_value" not in cols:
+        c.execute("ALTER TABLE trades ADD COLUMN total_value REAL NOT NULL DEFAULT 0.0")
+    if "reason" not in cols:
+        c.execute("ALTER TABLE trades ADD COLUMN reason TEXT DEFAULT ''")
     
     conn.commit()
     conn.close()
@@ -113,9 +121,18 @@ def get_user_portfolio(username: str):
     h_rows = c.fetchall()
     holdings = {r["symbol"]: {"shares": int(r["shares"]), "avg_price": float(r["avg_price"])} for r in h_rows}
     
-    c.execute("SELECT symbol, type, price, shares, total_value, reason, date FROM trades WHERE username = ? ORDER BY id DESC", (username,))
+    c.execute("SELECT * FROM trades WHERE username = ? ORDER BY id DESC", (username,))
     t_rows = c.fetchall()
-    trades = [dict(t) for t in t_rows]
+    
+    trades = []
+    for t in t_rows:
+        td = dict(t)
+        # ضمان توافق القيم في حال عدم وجودها
+        if "total_value" not in td or td["total_value"] is None:
+            td["total_value"] = round(float(td.get("price", 0.0)) * int(td.get("shares", 0)), 2)
+        if "reason" not in td or td["reason"] is None:
+            td["reason"] = "تنفيذ استراتيجي آلي"
+        trades.append(td)
     
     conn.close()
     return {
@@ -247,5 +264,4 @@ def get_all_users_summary():
     conn.close()
     return rows
 
-# تفعيل الجداول فور استدعاء الملف
 init_db()
