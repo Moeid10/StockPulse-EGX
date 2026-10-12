@@ -1,7 +1,9 @@
 import streamlit as st
 import json
 import os
+import hashlib
 import pandas as pd
+import plotly.express as px
 from datetime import datetime
 
 st.set_page_config(
@@ -10,16 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# تحديث تلقائي كل 30 ثانية
-st.markdown("""
-    <script>
-    setTimeout(function(){
-       window.location.reload();
-    }, 30000);
-    </script>
-""", unsafe_allow_html=True)
-
-# منع المتصفح من تشويه النصوص وتنسيق الواجهة
+# منع المتصفح من تشويه النصوص وضبط الاتجاه
 st.markdown("""
     <meta name="google" content="notranslate">
     <style>
@@ -37,12 +30,13 @@ st.markdown("""
         margin-top: 10px;
     }
     th, td {
-        border: 1px solid #ddd;
-        padding: 8px;
+        border: 1px solid #e0e0e0;
+        padding: 10px;
         text-align: center !important;
     }
     th {
-        background-color: #f2f2f2;
+        background-color: #f8f9fa;
+        color: #333;
     }
     [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {
         direction: ltr !important;
@@ -51,7 +45,78 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ----------------- نظام إدارة المستخدمين -----------------
+USERS_FILE = "users.json"
 PORTFOLIO_FILE = "portfolio.json"
+
+def hash_pass(password):
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        default_admin = {"admin": hash_pass("123456")}
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(default_admin, f, indent=4)
+        return default_admin
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_users(users_dict):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users_dict, f, indent=4)
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+    st.session_state["username"] = ""
+
+# شاشة تسجيل الدخول وإنشاء الحساب إذا لم يسجل الدخول
+if not st.session_state["authenticated"]:
+    col_c1, col_c2, col_c3 = st.columns([1, 2, 1])
+    with col_c2:
+        st.title("🔐 تسجيل الدخول إلى المنصة")
+        tab_login, tab_register = st.tabs(["تسجيل الدخول", "إنشاء حساب جديد"])
+        
+        users = load_users()
+        
+        with tab_login:
+            u_name = st.text_input("اسم المستخدم", key="login_user")
+            u_pass = st.text_input("كلمة المرور", type="password", key="login_pass")
+            if st.button("دخول", use_container_width=True):
+                if u_name in users and users[u_name] == hash_pass(u_pass):
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = u_name
+                    st.success("تم تسجيل الدخول بنجاح!")
+                    st.rerun()
+                else:
+                    st.error("اسم المستخدم أو كلمة المرور غير صحيحة.")
+
+        with tab_register:
+            reg_user = st.text_input("اسم المستخدم الجديد", key="reg_user")
+            reg_pass = st.text_input("كلمة المرور الجديدة", type="password", key="reg_pass")
+            reg_pass_conf = st.text_input("تأكيد كلمة المرور", type="password", key="reg_conf")
+            if st.button("إنشاء الحساب", use_container_width=True):
+                if not reg_user or not reg_pass:
+                    st.warning("يرجى ملء جميع الحقول.")
+                elif reg_user in users:
+                    st.error("اسم المستخدم هذا مسجل بالفعل.")
+                elif reg_pass != reg_pass_conf:
+                    st.error("كلمات المرور غير متطابقة.")
+                else:
+                    users[reg_user] = hash_pass(reg_pass)
+                    save_users(users)
+                    st.success("تم إنشاء الحساب بنجاح! يمكنك الآن تسجيل الدخول.")
+
+    st.stop()
+
+# ----------------- لوحة التحكم بعد تسجيل الدخول -----------------
+
+# القائمة الجانبية وزر الخروج
+with st.sidebar:
+    st.write(f"مرحباً بك: **{st.session_state['username']}** 👋")
+    if st.button("تسجيل الخروج"):
+        st.session_state["authenticated"] = False
+        st.session_state["username"] = ""
+        st.rerun()
 
 def load_portfolio():
     if not os.path.exists(PORTFOLIO_FILE):
@@ -59,11 +124,11 @@ def load_portfolio():
     with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# ترويسة الصفحة
+# ترويسة اللوحة
 col_t1, col_t2 = st.columns([3, 1])
 with col_t1:
     st.title("📊 منصة إدارة الاستثمار الآلي للبورصة المصرية")
-    st.caption("مراقبة حية لمحرك التداول الذاتي وقرارات الذكاء الاصطناعي")
+    st.caption("مراقبة حية لمحرك التداول الذاتي وقرارات الذكاء الاصطناعي المزدوج")
 with col_t2:
     st.success("🟢 محرك التداول: قيد التشغيل")
     st.write(f"آخر فحص: {datetime.now().strftime('%H:%M:%S')}")
@@ -75,6 +140,9 @@ trade_history = port.get("trade_history", [])
 
 holdings_rows = []
 invested_val = 0.0
+
+allocation_labels = ["السيولة النقدية (Cash)"]
+allocation_values = [cash]
 
 for sym, info in holdings.items():
     shares = 0
@@ -102,6 +170,8 @@ for sym, info in holdings.items():
             "سعر الشراء": f"{avg_price:.2f} ج",
             "القيمة الإجمالية": f"{total_pos:,.2f} ج"
         })
+        allocation_labels.append(sym)
+        allocation_values.append(total_pos)
 
 total_portfolio_value = cash + invested_val
 initial_capital = 100000.0
@@ -110,7 +180,7 @@ total_pnl_pct = (total_pnl / initial_capital) * 100
 
 st.divider()
 
-# كروت المؤشرات المالية
+# كروت المؤشرات الأساسية
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("القيمة الإجمالية للمحفظة", f"{total_portfolio_value:,.2f} ج")
 m2.metric("السيولة النقدية المتاحة", f"{cash:,.2f} ج")
@@ -119,6 +189,43 @@ m4.metric("العائد الإجمالي (P&L)", f"{total_pnl:,.2f} ج", delta=f
 
 st.divider()
 
+# قسم الرسوم البيانية التفاعلية
+st.subheader("📈 التحليلات البصرية وتوزيع الأصول")
+c_chart1, c_chart2 = st.columns([1, 1])
+
+with c_chart1:
+    fig_donut = px.pie(
+        names=allocation_labels,
+        values=allocation_values,
+        hole=0.45,
+        title="توزيع رأس المال والمراكز النشطة",
+        color_discrete_sequence=px.colors.qualitative.Prism
+    )
+    fig_donut.update_traces(textposition='inside', textinfo='percent+label')
+    fig_donut.update_layout(margin=dict(t=40, b=10, l=10, r=10), showlegend=False)
+    st.plotly_chart(fig_donut, use_container_width=True)
+
+with c_chart2:
+    if trade_history:
+        df_trades = pd.DataFrame(trade_history)
+        df_trades['total_value'] = df_trades.apply(lambda r: float(r.get('total_value', float(r.get('price', 0)) * int(r.get('shares', 0)))), axis=1)
+        fig_bar = px.bar(
+            df_trades.tail(8),
+            x="symbol",
+            y="total_value",
+            color="type",
+            color_discrete_map={"BUY": "#2ecc71", "SELL": "#e74c3c"},
+            title="أحجام الصفقات الأخيرة (شراء / بيع)",
+            labels={"symbol": "السهم", "total_value": "القيمة الإجمالية (ج)", "type": "العملية"}
+        )
+        fig_bar.update_layout(margin=dict(t=40, b=10, l=10, r=10))
+        st.plotly_chart(fig_bar, use_container_width=True)
+    else:
+        st.info("لا توجد صفقات سابقة لرسم المسار المالي.")
+
+st.divider()
+
+# جداول المراكز والصفقات
 col_left, col_right = st.columns([1, 1])
 
 with col_left:
@@ -142,7 +249,8 @@ with col_right:
             p_val = float(t.get("price", 0.0))
             s_val = int(t.get("shares", 0))
             tot = float(t.get("total_value", p_val * s_val))
-            html_trades += f"<tr><td>{time_str}</td><td><b>{t.get('symbol')}</b></td><td>{t.get('type')}</td><td>{s_val}</td><td>{p_val:.2f} ج</td><td>{tot:,.2f} ج</td></tr>"
+            badge_color = "#27ae60" if t.get('type') == 'BUY' else "#c0392b"
+            html_trades += f"<tr><td>{time_str}</td><td><b>{t.get('symbol')}</b></td><td style='color:{badge_color}; font-weight:bold;'>{t.get('type')}</td><td>{s_val}</td><td>{p_val:.2f} ج</td><td>{tot:,.2f} ج</td></tr>"
         html_trades += "</table></div>"
         st.markdown(html_trades, unsafe_allow_html=True)
     else:
