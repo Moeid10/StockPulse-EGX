@@ -263,16 +263,13 @@ with c_chart2:
 st.divider()
 
 # جداول المراكز وتفسيرات الصفقات
-col_left, col_right = st.columns([1, 1.3])
+col_left, col_right = st.columns([1, 1.4])
 
 with col_left:
     st.subheader("📌 الأسهم المملوكة حالياً")
     if holdings_rows:
-        html_holdings = "<div class='notranslate'><table><tr><th>السهم</th><th>عدد الأسهم</th><th>سعر الشراء</th><th>القيمة الإجمالية</th></tr>"
-        for row in holdings_rows:
-            html_holdings += f"<tr><td><b>{row['السهم']}</b></td><td>{row['عدد الأسهم']}</td><td>{row['سعر الشراء']}</td><td>{row['القيمة الإجمالية']}</td></tr>"
-        html_holdings += "</table></div>"
-        st.markdown(html_holdings, unsafe_allow_html=True)
+        df_holdings = pd.DataFrame(holdings_rows)
+        st.dataframe(df_holdings, use_container_width=True, hide_index=True)
     else:
         st.info("لا توجد أسهم مملوكة حالياً.")
 
@@ -280,39 +277,27 @@ with col_right:
     st.subheader("📜 آخر صفقات ومبررات الذكاء الاصطناعي")
     if trade_history:
         recent = list(reversed(trade_history[-6:]))
-        html_trades = """
-        <div class='notranslate'>
-            <table>
-                <tr>
-                    <th>التوقيت</th>
-                    <th>السهم</th>
-                    <th>العملية</th>
-                    <th>الكمية</th>
-                    <th>السعر</th>
-                    <th>الإجمالي</th>
-                    <th>مبرر القرار (AI Reasoning)</th>
-                </tr>
-        """
+        table_data = []
         for t in recent:
             time_str = t.get("date", "").split()[-1] if " " in t.get("date", "") else t.get("date", "")
             p_val = float(t.get("price", 0.0))
             s_val = int(t.get("shares", 0))
             tot = float(t.get("total_value", p_val * s_val))
             reason = t.get("reason", "تنفيذ آلي")
-            badge_color = "#27ae60" if t.get('type') == 'BUY' else "#c0392b"
             
-            html_trades += f"""
-                <tr>
-                    <td>{time_str}</td>
-                    <td><b>{t.get('symbol')}</b></td>
-                    <td style='color:{badge_color}; font-weight:bold;'>{t.get('type')}</td>
-                    <td>{s_val}</td>
-                    <td>{p_val:.2f} ج</td>
-                    <td>{tot:,.2f} ج</td>
-                    <td style='text-align: right; font-size: 0.85em; color: #555;'>{reason}</td>
-                </tr>
-            """
-        html_trades += "</table></div>"
-        st.markdown(html_trades, unsafe_allow_html=True)
+            table_data.append({
+                "التوقيت": time_str,
+                "السهم": t.get("symbol", ""),
+                "العملية": "🟢 شراء" if t.get("type") == "BUY" else "🔴 بيع",
+                "الكمية": s_val,
+                "السعر": f"{p_val:.2f} ج",
+                "الإجمالي": f"{tot:,.2f} ج",
+                "مبرر القرار (AI Reasoning)": reason
+            })
+            
+        df_trades = pd.DataFrame(table_data)
+        st.dataframe(df_trades, use_container_width=True, hide_index=True)
+    else:
+        st.info("لم يتم تسجيل صفقات بعد.")rkdown(html_trades, unsafe_allow_html=True)
     else:
         st.info("لم يتم تسجيل صفقات بعد.")
