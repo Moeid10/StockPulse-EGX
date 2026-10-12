@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from groq import Groq
 from market_data import get_stock_metrics
@@ -9,12 +10,20 @@ from database import (
     execute_user_trade
 )
 
-def query_groq_ai(symbol: str, metrics: dict) -> tuple:
-    """استشارة نموذج Groq الذكي لاتخاذ قرار الشراء أو التخطي بناءً على التحليل الفني"""
+def extract_json_payload(text: str) -> dict:
+    """استخراج كائن JSON بأمان وتجاوز أي وسوم تفكير داخل رد DeepSeek"""
+    # إزالة محتوى وسم التفكير إن وُجد
+    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    match = re.search(r'\{.*?\}', cleaned, re.DOTALL)
+    if match:
+        return json.loads(match.group(0))
+    return json.loads(text)
+
+def query_deepseek_ai(symbol: str, metrics: dict) -> tuple:
+    """استشارة نموذج DeepSeek-R1 عبر منصة Groq للتحليل المالي المتعمق"""
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        print("⚠️ تحذير: GROQ_API_KEY غير موجود، استخدام القواعد الفنية التقليدية.")
-        # بديل تلقائي إذا لم يوجد المفتاح
+        print("⚠️ تحذير: لم يتم العثور على GROQ_API_KEY، الاعتماد على القواعد الفنية البديلة.")
         rsi = metrics.get("rsi", 50.0)
         if rsi < 35:
             return "BUY", "إشارة شراء فنية: مؤشر RSI في مناطق تشبع بيعي قوية."
@@ -23,7 +32,8 @@ def query_groq_ai(symbol: str, metrics: dict) -> tuple:
     try:
         client = Groq(api_key=api_key)
         prompt = f"""
-        أنت خبير تداول ومستشار استثماري كمي في البورصة المصرية (EGX).
+        أنت محلل كمي وخبير استثمار معتمد في البورصة المصرية (EGX).
+        قم بتحليل أرقام السهم التالية:
         السهم: {symbol}
         السعر الحالي: {metrics.get('current_price', 0.0)} ج.م
         مؤشر القوة النسبية (RSI 14): {metrics.get('rsi', 50.0)}
@@ -31,23 +41,31 @@ def query_groq_ai(symbol: str, metrics: dict) -> tuple:
         التغير اليومي: {metrics.get('change_pct', 0.0)}%
 
         المطلوب:
-        أعطِ قرارك الاستثماري (BUY أو HOLD فقط).
-        أجب بصيغة JSON فقط بهذا الشكل:
-        {{"decision": "BUY", "reason": "سبب موجز بالعربية لا يتعدى 10 كلمات"}}
+        اتخذ قرارك الاستثماري (BUY للشراء فقط إذا كانت نسبة المخاطرة للعائد ممتازة، أو HOLD للانتظار).
+        أخرج إجابتك بصيغة JSON فقط دون أي شروحات إضافية خارج الـ JSON:
+        {{"decision": "BUY", "reason": "مبرر مالي موجز بالعربية لا يتعدى 10 كلمات"}}
         """
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="deepseek-r1-distill-llama-70b",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            response_format={"type": "json_object"}
+            temperature=0.3
         )
 
-        data = json.loads(response.choices[0].message.content)
-        return data.get("decision", "HOLD").upper(), data.get("reason", "تحليل الذكاء الاصطناعي")
+        raw_content = response.choices[0].message.content
+        data = extract_json_payload(raw_content)
+        
+        decision = data.get("decision", "HOLD").upper()
+        reason = data.get("reason", "تحليل DeepSeek المالي الكمي")
+        return decision, reason
+
     except Exception as e:
-        print(f"خطأ أثناء استشارة النموذج لسهم {symbol}: {e}")
-        return "HOLD", "خطأ في الاتصال بالنموذج"
+        print(f"⚠️ خطأ أثناء استشارة DeepSeek لسهم {symbol}: {e}")
+        # خيار أمان احتياطي لتفادي توقف الدورة
+        rsi = metrics.get("rsi", 50.0)
+        if rsi < 35:
+            return "BUY", "إشارة فنية احتياطية: تشبع بيعي"
+        return "HOLD", "انتظار تأكيد المؤشرات"
 
 def run_auto_trader():
     users = get_all_usernames()
@@ -55,7 +73,7 @@ def run_auto_trader():
         print("لا يوجد مستخدمون مسجلون لتنفيذ التداول.")
         return
 
-    print(f"🚀 بدء تشغيل التداول الآلي لعدد {len(users)} مستخدمين مسجلين...")
+    print(f"🚀 بدء تشغيل محرك DeepSeek-R1 لعدد {len(users)} مستخدمين مسجلين...")
 
     for username in users:
         print(f"\n==========================================")
@@ -93,31 +111,30 @@ def run_auto_trader():
                 execute_user_trade(username, sym, "SELL", cur_price, shares, reason=reason)
                 print(f"⚠️ [{username}] تم بيع {shares} سهم من {sym} لوقف الخسارة.")
 
-        # ---------------- 2. فحص فرص الشراء الذكية الجديدة ----------------
+        # ---------------- 2. فحص فرص الشراء عبر DeepSeek-R1 ----------------
         if cash >= 5000:
             bought_this_cycle = False
             for label, ticker in EGX_ASSETS.items():
                 if bought_this_cycle:
-                    break  # صفقة واحدة جديدة في الدورة الواحدة للمحافظة على التنوع وإدارة السيولة
+                    break
 
                 if ticker in holdings and holdings[ticker].get("shares", 0) > 0:
-                    continue  # لا يشتري نفس السهم إذا كان يملكه بالفعل
+                    continue
 
                 metrics = get_stock_metrics(ticker)
                 cur_price = metrics.get("current_price", 0.0)
                 if cur_price <= 0:
                     continue
 
-                decision, reason = query_groq_ai(ticker, metrics)
+                decision, reason = query_deepseek_ai(ticker, metrics)
 
                 if decision == "BUY":
-                    # تخصيص 20% كحد أقصى من السيولة المتاحة
                     trade_budget = min(cash * 0.20, 20000.0)
                     shares_to_buy = int(trade_budget // cur_price)
 
                     if shares_to_buy > 0:
                         suc, msg = execute_user_trade(
-                            username, ticker, "BUY", cur_price, shares_to_buy, reason=f"AI: {reason}"
+                            username, ticker, "BUY", cur_price, shares_to_buy, reason=f"DeepSeek: {reason}"
                         )
                         if suc:
                             print(f"🟢 [{username}] شراء ناجح: {shares_to_buy} سهم من {ticker} بسعر {cur_price:.2f} ج.")
@@ -128,7 +145,7 @@ def run_auto_trader():
         else:
             print(f"ℹ️ السيولة غير كافية لفتح مراكز جديدة للمستخدم {username}.")
 
-    print("\n🏁 اكتملت دورة التداول الآلي لجميع المستخدمين بنجاح.")
+    print("\n🏁 اكتملت دورة التداول الآلي بنجاح.")
 
 if __name__ == "__main__":
     run_auto_trader()
