@@ -188,4 +188,15 @@ def panic_liquidate_user(username, market_prices):
         price = market_prices.get(sym, 10.0)
         execute_user_trade(username, sym, "SELL", price, shares=shares, reason="🚨 تسييل طوارئ شامل للمحفظة")
     conn.close()
-    return True, "تم تسييل كافة المراكز وتحويلها إلى سيولة نقدية."
+return True, "تم تسييل كافة المراكز وتحويلها إلى سيولة نقدية."
+def get_all_users_summary():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT u.username, u.created_at, p.cash 
+        FROM users u 
+        LEFT JOIN portfolios p ON u.username = p.username
+    """)
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
