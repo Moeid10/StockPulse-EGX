@@ -1,13 +1,10 @@
 import streamlit as st
-import json
-import os
-import hashlib
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
-from portfolio_manager import execute_trade, panic_liquidate
 from market_data import get_stock_metrics
 from egx_assets import EGX_ASSETS
+from database import verify_user, register_user, get_user_portfolio, execute_user_trade, panic_liquidate_user
 
 st.set_page_config(
     page_title="StockPulse EGX - AI Fund Manager",
@@ -15,13 +12,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# ضبط الاتجاه العام بدون كسر تنسيق الجداول
 st.markdown("""
     <meta name="google" content="notranslate">
     <style>
-    .notranslate {
-        translate: no !important;
-    }
+    .notranslate { translate: no !important; }
     h1, h2, h3, h4, p, span, label {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         text-align: right;
@@ -29,25 +23,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
-USERS_FILE = "users.json"
-PORTFOLIO_FILE = "portfolio.json"
-
-def hash_pass(password):
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        default_admin = {"admin": hash_pass("123456")}
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(default_admin, f, indent=4)
-        return default_admin
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def save_users(users_dict):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users_dict, f, indent=4)
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -59,13 +34,12 @@ if not st.session_state["authenticated"]:
     with col_c2:
         st.title("🔐 تسجيل الدخول إلى المنصة")
         tab_login, tab_register = st.tabs(["تسجيل الدخول", "إنشاء حساب جديد"])
-        users = load_users()
         
         with tab_login:
             u_name = st.text_input("اسم المستخدم", key="login_user")
             u_pass = st.text_input("كلمة المرور", type="password", key="login_pass")
             if st.button("دخول", use_container_width=True):
-                if u_name in users and users[u_name] == hash_pass(u_pass):
+                if verify_user(u_name, u_pass):
                     st.session_state["authenticated"] = True
                     st.session_state["username"] = u_name
                     st.rerun()
@@ -78,22 +52,22 @@ if not st.session_state["authenticated"]:
             reg_pass_conf = st.text_input("تأكيد كلمة المرور", type="password", key="reg_conf")
             if st.button("إنشاء الحساب", use_container_width=True):
                 if not reg_user or not reg_pass:
-                    st.warning("يرجى ملء جميع الحقول.")
-                elif reg_user in users:
-                    st.error("اسم المستخدم مسجل بالفعل.")
+                    st.warning("يرجى ملء كافة الحقول.")
                 elif reg_pass != reg_pass_conf:
                     st.error("كلمات المرور غير متطابقة.")
                 else:
-                    users[reg_user] = hash_pass(reg_pass)
-                    save_users(users)
-                    st.success("تم إنشاء الحساب بنجاح! تفضل بالدخول الآن.")
-
+                    ok, msg = register_user(reg_user, reg_pass)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
     st.stop()
 
-# ----------------- لوحة التحكم بعد الدخول -----------------
+# ----------------- اللوحة الرئيسية -----------------
+current_user = st.session_state["username"]
 
 with st.sidebar:
-    st.write(f"المستخدم: **{st.session_state['username']}** 👤")
+    st.write(f"المستخدم: **{current_user}** 👤")
     if st.button("تسجيل الخروج"):
         st.session_state["authenticated"] = False
         st.session_state["username"] = ""
@@ -102,38 +76,30 @@ with st.sidebar:
     st.divider()
     st.subheader("⚠️ مركز الطوارئ")
     if st.button("🚨 تسييل المحفظة بالكامل (Panic Sell)", type="primary", use_container_width=True):
-        current_port = json.load(open(PORTFOLIO_FILE, "r", encoding="utf-8")) if os.path.exists(PORTFOLIO_FILE) else {}
+        u_port = get_user_portfolio(current_user)
         market_prices = {}
-        for sym in current_port.get("holdings", {}).keys():
-            metrics = get_stock_metrics(sym)
-            market_prices[sym] = metrics.get("current_price", 10.0)
-            
-        success, msg = panic_liquidate(market_prices)
-        if success:
-            st.success("تم تسييل كافة المراكز وتحويلها إلى كاش بنجاح.")
+        for sym in u_port["holdings"].keys():
+            m = get_stock_metrics(sym)
+            market_prices[sym] = m.get("current_price", 10.0)
+        ok, msg = panic_liquidate_user(current_user, market_prices)
+        if ok:
+            st.success(msg)
             st.rerun()
         else:
             st.warning(msg)
 
-def load_portfolio():
-    if not os.path.exists(PORTFOLIO_FILE):
-        return {"cash": 100000.0, "holdings": {}, "trade_history": []}
-    with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-# ترويسة اللوحة
 col_t1, col_t2 = st.columns([3, 1])
 with col_t1:
     st.title("📊 منصة إدارة الاستثمار الآلي للبورصة المصرية")
-    st.caption("نظام التداول الكمي المزدوج (DeepSeek-R1 + Llama-3.3-70B)")
+    st.caption(f"نظام الذكاء الاصطناعي المزدوج | المحفظة الاستثمارية لـ: {current_user}")
 with col_t2:
     st.success("🟢 محرك التداول: قيد التشغيل")
     st.write(f"آخر فحص: {datetime.now().strftime('%H:%M:%S')}")
 
-port = load_portfolio()
-cash = float(port.get("cash", 100000.0))
-holdings = port.get("holdings", {})
-trade_history = port.get("trade_history", [])
+port = get_user_portfolio(current_user)
+cash = port["cash"]
+holdings = port["holdings"]
+trade_history = port["trade_history"]
 
 holdings_rows = []
 invested_val = 0.0
@@ -141,20 +107,8 @@ allocation_labels = ["السيولة النقدية (Cash)"]
 allocation_values = [cash]
 
 for sym, info in holdings.items():
-    shares = 0
-    avg_price = 0.0
-    if isinstance(info, dict):
-        shares = int(info.get("shares", 0))
-        avg_price = float(info.get("avg_price", 0.0))
-    elif isinstance(info, (int, float)):
-        shares = int(info)
-        for t in reversed(trade_history):
-            if t.get("symbol") == sym:
-                avg_price = float(t.get("price", 0.0))
-                break
-        if avg_price == 0.0 and shares == 2587:
-            avg_price = 7.73
-
+    shares = info["shares"]
+    avg_price = info["avg_price"]
     total_pos = shares * avg_price
     invested_val += total_pos
     if shares > 0:
@@ -174,7 +128,6 @@ total_pnl_pct = (total_pnl / initial_capital) * 100
 
 st.divider()
 
-# كروت المؤشرات
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("القيمة الإجمالية للمحفظة", f"{total_portfolio_value:,.2f} ج")
 m2.metric("السيولة النقدية المتاحة", f"{cash:,.2f} ج")
@@ -183,7 +136,6 @@ m4.metric("العائد الإجمالي (P&L)", f"{total_pnl:,.2f} ج", delta=f
 
 st.divider()
 
-# قسم التداول اليدوي الفوري
 with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade Override)", expanded=False):
     t_c1, t_c2, t_c3, t_c4 = st.columns(4)
     with t_c1:
@@ -199,15 +151,14 @@ with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade Ov
         st.write("")
         if st.button("🚀 تنفيذ الأمر فوراً", use_container_width=True):
             metrics = get_stock_metrics(trade_ticker)
-            exec_price = metrics["current_price"] if "current_price" in metrics else 10.0
-            suc, message = execute_trade(trade_ticker, trade_type, exec_price, int(trade_shares), reason="أمر يدوي من لوحة التحكم")
+            exec_price = metrics.get("current_price", 10.0)
+            suc, message = execute_user_trade(current_user, trade_ticker, trade_type, exec_price, int(trade_shares), reason="أمر يدوي مباشر من لوحة التحكم")
             if suc:
                 st.success(message)
                 st.rerun()
             else:
                 st.error(message)
 
-# الرسوم البيانية
 st.subheader("📈 التحليلات البصرية وتوزيع الأصول")
 c_chart1, c_chart2 = st.columns([1, 1])
 
@@ -226,7 +177,6 @@ with c_chart1:
 with c_chart2:
     if trade_history:
         df_trades = pd.DataFrame(trade_history)
-        df_trades['total_value'] = df_trades.apply(lambda r: float(r.get('total_value', float(r.get('price', 0)) * int(r.get('shares', 0)))), axis=1)
         fig_bar = px.bar(
             df_trades.tail(8),
             x="symbol",
@@ -243,22 +193,6 @@ with c_chart2:
 
 st.divider()
 
-# دالة مساعدة لتعريب الأسباب القديمة المسجلة بالإنجليزية
-def translate_reason_to_arabic(eng_reason):
-    if not eng_reason or eng_reason == "None":
-        return "تنفيذ استراتيجي آلي بناءً على مؤشرات السوق"
-    r = eng_reason.lower()
-    if "rebound" in r or "oversold" in r:
-        return "ارتداد فني متوقع من منطقة تشبع بيعي"
-    if "below the 20-day sma" in r or "downward momentum" in r:
-        return "كسر المتوسط المتحرك 20 يوم لأسفل واستمرار الزخم الهابط"
-    if "panic sell" in r:
-        return "تسييل اضطراري شامل لتقليص المخاطر"
-    if "manual" in r:
-        return "تنفيذ يدوي مباشر من لوحة التحكم"
-    return eng_reason
-
-# عرض جدول المراكز المملوكة
 st.subheader("📌 الأسهم المملوكة حالياً")
 if holdings_rows:
     df_holdings = pd.DataFrame(holdings_rows)
@@ -268,18 +202,15 @@ else:
 
 st.divider()
 
-# عرض جدول الصفقات مع المبرر باللغة العربية
 st.subheader("📜 آخر صفقات ومبررات الذكاء الاصطناعي")
 if trade_history:
-    recent = list(reversed(trade_history[-6:]))
+    recent = trade_history[:6]
     table_data = []
     for t in recent:
         time_str = t.get("date", "").split()[-1] if " " in t.get("date", "") else t.get("date", "")
         p_val = float(t.get("price", 0.0))
         s_val = int(t.get("shares", 0))
         tot = float(t.get("total_value", p_val * s_val))
-        raw_reason = t.get("reason", "تنفيذ استراتيجي")
-        arabic_reason = translate_reason_to_arabic(raw_reason)
         action_tag = "🟢 شراء" if t.get("type") == "BUY" else "🔴 بيع"
         
         table_data.append({
@@ -289,7 +220,7 @@ if trade_history:
             "الكمية": s_val,
             "السعر": f"{p_val:.2f} ج",
             "الإجمالي": f"{tot:,.2f} ج",
-            "مبرر الذكاء الاصطناعي": arabic_reason
+            "مبرر الذكاء الاصطناعي": t.get("reason", "تنفيذ استراتيجي")
         })
         
     df_trades = pd.DataFrame(table_data)
