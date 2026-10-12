@@ -289,7 +289,7 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# 2. كروت المؤشرات
+# 2. كروت المؤشرات المالية
 st.markdown(f"""
     <div class="metrics-wrapper">
         <div class="m-card">
@@ -302,4 +302,137 @@ st.markdown(f"""
         </div>
         <div class="m-card">
             <div class="m-label">المستثمر في الأسهم</div>
-            <div class
+            <div class="m-value">{invested_val:,.2f} <span style="font-size: 0.85rem; color:#8b949e;">ج</span></div>
+        </div>
+        <div class="m-card">
+            <div class="m-label">إجمالي الأرباح / الخسائر</div>
+            <div class="m-value">{pnl_sign}{total_pnl:,.2f} <span style="font-size: 0.85rem; color:#8b949e;">ج</span></div>
+            <div class="{pnl_class}">{pnl_sign}{total_pnl_pct:.2f}% منذ البداية</div>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
+
+# 3. تنفيذ صفقة يدوية فورية
+with st.expander("⚡ تنفيذ صفقة يدوية فورية (Manual Trade)", expanded=False):
+    t1, t2, t3, t4 = st.columns([2, 1, 1, 1.2])
+    with t1:
+        asset_names = list(EGX_ASSETS.keys())
+        selected_label = st.selectbox("اختر السهم / الأصل", asset_names)
+        trade_ticker = EGX_ASSETS[selected_label]
+    with t2:
+        trade_type = st.selectbox("نوع العملية", ["BUY", "SELL"])
+    with t3:
+        trade_shares = st.number_input("الكمية", min_value=1, value=100, step=10)
+    with t4:
+        st.write("")
+        st.write("")
+        if st.button("🚀 تأكيد العملية", use_container_width=True, type="primary"):
+            metrics = get_stock_metrics(trade_ticker)
+            exec_price = metrics.get("current_price", 10.0)
+            suc, message = execute_user_trade(
+                current_user,
+                trade_ticker,
+                trade_type,
+                exec_price,
+                int(trade_shares),
+                reason="تنفيذ يدوي مباشر من لوحة التحكم"
+            )
+            if suc:
+                st.success(message)
+                st.rerun()
+            else:
+                st.error(message)
+
+# 4. الرسوم البيانية
+c1, c2 = st.columns(2)
+
+with c1:
+    fig_donut = px.pie(
+        names=allocation_labels,
+        values=allocation_values,
+        hole=0.6,
+        title="توزيع الأصول والمراكز",
+        color_discrete_sequence=['#00E676', '#1E88E5', '#FFB300', '#D81B60', '#8E24AA']
+    )
+    fig_donut.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#0c0d12', width=2)))
+    fig_donut.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#8b949e'),
+        margin=dict(t=40, b=10, l=10, r=10),
+        showlegend=False
+    )
+    st.plotly_chart(fig_donut, use_container_width=True)
+
+with c2:
+    if trade_history:
+        cleaned_trades = []
+        for t in trade_history[-7:]:
+            p_val = float(t.get("price", 0.0))
+            s_val = int(t.get("shares", 0))
+            tot = float(t.get("total_value", p_val * s_val))
+            cleaned_trades.append({
+                "symbol": str(t.get("symbol", "")),
+                "total_value": tot,
+                "type": str(t.get("type", "BUY"))
+            })
+            
+        df_trades = pd.DataFrame(cleaned_trades)
+        if not df_trades.empty and "total_value" in df_trades.columns:
+            fig_bar = px.bar(
+                df_trades,
+                x="symbol",
+                y="total_value",
+                color="type",
+                color_discrete_map={"BUY": "#00E676", "SELL": "#ff5252"},
+                title="أحدث الصفقات المنفذة",
+                labels={"symbol": "السهم", "total_value": "القيمة (ج)", "type": "العملية"}
+            )
+            fig_bar.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#8b949e'),
+                margin=dict(t=40, b=10, l=10, r=10),
+                xaxis=dict(showgrid=False),
+                yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)')
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.info("بيانات الصفقات غير مكتملة للرسم البياني.")
+    else:
+        st.info("لا توجد صفقات لعرض المسار البياني.")
+
+st.divider()
+
+# 5. الجداول
+st.subheader("📌 الأسهم المملوكة حالياً")
+if holdings_rows:
+    st.table(pd.DataFrame(holdings_rows))
+else:
+    st.info("لا توجد أسهم في المحفظة حالياً.")
+
+st.divider()
+
+st.subheader("📜 آخر الصفقات ومبررات الذكاء الاصطناعي")
+if trade_history:
+    recent = trade_history[:6]
+    table_data = []
+    for t in recent:
+        time_str = t.get("date", "").split()[-1] if " " in t.get("date", "") else t.get("date", "")
+        p_val = float(t.get("price", 0.0))
+        s_val = int(t.get("shares", 0))
+        tot = float(t.get("total_value", p_val * s_val))
+        action_tag = "🟢 شراء" if t.get("type") == "BUY" else "🔴 بيع"
+        
+        table_data.append({
+            "الوقت": time_str,
+            "السهم": t.get("symbol", ""),
+            "العملية": action_tag,
+            "الكمية": f"{s_val:,}",
+            "السعر": f"{p_val:.2f} ج",
+            "الإجمالي": f"{tot:,.2f} ج",
+            "مبرر الذكاء الاصطناعي": t.get("reason", "تنفيذ استراتيجي آلي")
+        })
+    st.table(pd.DataFrame(table_data))
+else:
+    st.info("لم يتم تسجيل أي صفقات بعد.")
