@@ -2,7 +2,6 @@ name: EGX Auto Trader Bot
 
 on:
   schedule:
-    # يعمل تلقائياً كل 15 دقيقة في أوقات جلسات تداول البورصة المصرية
     - cron: '*/15 8-13 * * 0-4'
   workflow_dispatch:
 
